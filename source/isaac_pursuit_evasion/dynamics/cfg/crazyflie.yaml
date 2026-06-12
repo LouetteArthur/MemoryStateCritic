@@ -1,0 +1,23 @@
+# crazyflie.yaml - Standard Crazyflie 2.x (brushed motors)
+name: crazyflie
+model: cf2x
+
+# reference physical values (simulation uses USD mass/inertia at runtime)
+mass_ref: 0.027  # kg (stock CF2.1 without extras)
+inertia_ref: [1.4e-5, 1.4e-5, 2.17e-5]
+
+# geometry (X configuration)
+arm_length: 0.046  # m (Crazyflie 2.x arm length)
+
+# motor dynamics (brushed motors are slower than brushless)
+tau_m: 0.02
+motor_speed_min: 0.0
+motor_speed_max: 2500.0
+
+# motor/prop coefficients (stock 7mm brushed motors)
+k_eta: 2.13e-8
+k_m: 7.8e-10
+
+# aerodynamic drag (body frame)
+k_aero_xy: 9.1785e-7
+k_aero_z: 10.311e-7

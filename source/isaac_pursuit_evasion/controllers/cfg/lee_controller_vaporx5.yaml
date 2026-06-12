@@ -1,0 +1,27 @@
+# position_gain: [2, 2, 4.0]
+# velocity_gain: [2.8, 2.8, 3.5]
+# attitude_gain: [100.0, 100.0, 3.0]
+# angular_rate_gain: [18.0, 18.0, 3.0]
+# Gains tuned for VaporX5 drone model
+# They are more aggressive than the previous ones
+position_gain: [
+      5.754031181335449,
+      5.754031181335449,
+      11.508062362670898
+    ]
+velocity_gain: [
+      1.9714384078979492,
+      1.9714384078979492,
+      2.4642980098724365
+    ]
+attitude_gain: [
+      464.1994934082031,
+      464.1994934082031,
+      13.925985336303711
+    ]
+angular_rate_gain: [
+      31.044588088989258,
+      31.044588088989258,
+      5.174098014831543
+    ]
+max_acceleration: 15.0

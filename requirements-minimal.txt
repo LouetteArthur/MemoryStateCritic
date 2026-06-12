@@ -1,0 +1,20 @@
+# Minimal requirements to run tests without Isaac Sim/Isaac Lab.
+# Install with:
+#   pip install -r requirements-minimal.txt
+#   pip install -e source/third_parties/skrl/
+#   pip install -e source/isaac_pursuit_evasion/
+
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.0+cu128
+torchvision==0.22.0+cu128
+
+numpy==1.26.4
+gymnasium==1.2.1
+PyYAML==6.0.2
+toml==0.10.2
+psutil==5.9.8
+packaging==23.0
+tensorboard==2.18.0
+tqdm==4.67.1
+pytest==8.3.5
+pytest-mock==3.15.1

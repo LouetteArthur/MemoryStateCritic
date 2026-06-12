@@ -1,0 +1,6 @@
+kp: [4.0, 4.0, 4.0]
+kd: [0.8, 0.8, 0.6]
+derivative_limit: [3.0, 3.0, 2.0]
+filter_alpha: 0.2
+max_speed: [8.0, 8.0, 3.0]
+max_acceleration: [5.0, 5.0, 3.0]

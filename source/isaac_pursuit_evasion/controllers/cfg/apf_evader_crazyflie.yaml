@@ -1,0 +1,10 @@
+# Gains tuned for Crazyflie brushless
+k_pursuer: 0.8
+k_wall: 2.0
+order_den_pursuer: 3.0
+order_den_wall: 3.0
+min_wall_dist: 0.8
+min_pursuer_dist: 1.2
+max_speed: 1.5
+arena_min: [-2.0, -2.0, 0.0]
+arena_max: [2.0, 2.0, 2.0]

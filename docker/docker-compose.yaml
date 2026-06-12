@@ -1,0 +1,43 @@
+services:
+  train:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        CUDA_IMAGE: ${CUDA_IMAGE:-nvcr.io/nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04}
+    image: isaac-pursuit-evasion:local
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - ACCEPT_EULA=Y
+      - PRIVACY_CONSENT=Y
+      - OMNI_KIT_ALLOW_ROOT=1
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Live-mount the repo: git checkout on the host is seen in the container.
+      - ..:/workspace/IsaacPursuitEvasion
+      # Persist Isaac Sim caches across container runs (assets, shaders, pip).
+      - isaac-ov-cache:/root/.cache/ov
+      - isaac-pip-cache:/root/.cache/pip
+      - isaac-glcache:/root/.cache/nvidia/GLCache
+      - isaac-computecache:/root/.nv/ComputeCache
+      - isaac-kit-data:/root/.local/share/ov
+    working_dir: /workspace/IsaacPursuitEvasion
+    ipc: host
+    shm_size: "16gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    stdin_open: true
+    tty: true
+    command: bash
+
+volumes:
+  isaac-ov-cache:
+  isaac-pip-cache:
+  isaac-glcache:
+  isaac-computecache:
+  isaac-kit-data:

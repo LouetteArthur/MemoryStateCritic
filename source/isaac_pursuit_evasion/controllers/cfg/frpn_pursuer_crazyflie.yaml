@@ -1,0 +1,4 @@
+# Gains tuned for Crazyflie brushless
+G: 4
+W: 0.25
+max_speed: [2.0, 2.0, 1.0]

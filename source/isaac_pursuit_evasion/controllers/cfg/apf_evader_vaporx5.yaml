@@ -1,0 +1,20 @@
+# Gains from hummingbird
+# k_pursuer: 2.0
+# k_wall: 1.0
+# order_den_pursuer: 3.0
+# order_den_wall: 2.0
+# min_wall_dist: 1.5
+# min_pursuer_dist: 2.0
+# max_speed: 6.0
+# arena_min: [-6.0, -6.0, 0.0]
+# arena_max: [6.0, 6.0, 6.0]
+# Gains optimized for VaporX5
+k_pursuer: 1.2
+k_wall: 3.2
+order_den_pursuer: 3.0
+order_den_wall: 3.0
+min_wall_dist: 2
+min_pursuer_dist: 3.2
+max_speed: 4.5
+arena_min: [-6.0, -6.0, 0.0]
+arena_max: [6.0, 6.0, 6.0]

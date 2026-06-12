@@ -1,0 +1,109 @@
+seed: 42
+
+# CNN+GRU vision PPO with V(s, h) history-state critic
+# Actor: Conv2d encoder -> Linear(128) -> GRU(256) -> actions
+# Critic: own Conv2d+GRU(256) over learner's (o,a) stream, concat with
+#         privileged state -> MLP -> value
+#
+# The critic has its OWN CNN and GRU, separate from the actor's.
+# It processes the same observation-action stream but with independent
+# weights, giving it access to a learned summary of the history h.
+# BPTT flows through both actor and critic RNNs independently.
+
+models:
+  separate: True
+  policy:
+    class: GaussianCNNRNNMixin
+    clip_actions: False
+    clip_log_std: True
+    min_log_std: -20.0
+    max_log_std: 2.0
+    initial_log_std: 0.0
+    rnn:
+      type: gru
+      hidden_size: 256
+      num_layers: 1
+      sequence_length: 16  # BPTT across 16-step sequences
+  value:
+    class: HistoryStateCriticMixin
+    clip_actions: False
+    image_channels: 2      # depth + segmap
+    image_height: 64
+    image_width: 64
+    past_actions_size: 4   # 1 past action × 4 action dims
+    cnn_feature_size: 128
+    layers: [256, 128, 64]
+    rnn:
+      hidden_size: 256
+      num_layers: 1
+      sequence_length: 16
+
+
+# Rollout memory
+memory:
+  class: RandomMemory
+  memory_size: -1
+
+
+# PPO_RNN agent configuration
+agent:
+  class: PPO_RNN_SH
+
+  rollouts: 32
+  learning_epochs: 8
+  mini_batches: 4
+
+  discount_factor: 0.99
+  lambda: 0.95
+
+  learning_rate: 3.0e-04
+  learning_rate_scheduler: KLAdaptiveLR
+  learning_rate_scheduler_kwargs:
+    kl_threshold: 0.008
+    min_lr: 1.0e-05
+
+  state_preprocessor: null  # Actor images — no standard scaling
+  state_preprocessor_kwargs: null
+  critic_state_preprocessor: RunningStandardScaler
+  critic_state_preprocessor_kwargs: null
+  value_preprocessor: RunningStandardScaler
+  value_preprocessor_kwargs: null
+
+  random_timesteps: 0
+  learning_starts: 0
+
+  grad_norm_clip: 1.0
+  ratio_clip: 0.2
+  value_clip: 0.2
+  clip_predicted_values: True
+
+  entropy_loss_scale: 0.01
+  value_loss_scale: 2.0
+
+  kl_threshold: 0.0
+
+  rewards_shaper_scale: 0.1
+  time_limit_bootstrap: False
+
+  sh_critic: True
+  sh_image_shape: [2, 64, 64]
+  sh_past_actions_size: 4
+
+  experiment:
+    directory: "training"
+    experiment_name: ""
+    write_interval: auto
+    checkpoint_interval: auto
+
+    wandb: true
+    wandb_kwargs:
+      project: "ppo_vision_rnn_sh"
+      entity: ""
+      name: ""
+
+
+# Sequential trainer
+trainer:
+  class: SequentialTrainer
+  timesteps: 20000
+  environment_info: log
