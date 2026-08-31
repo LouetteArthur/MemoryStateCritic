@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the paper below."
+title: "MemoryStateCritic: vision-based quadrotor pursuit-evasion for asymmetric actor-critic research"
+type: software
+license: BSD-3-Clause
+repository-code: "https://github.com/LouetteArthur/MemoryStateCritic"
+authors:
+  - family-names: Louette
+    given-names: Arthur
+  - family-names: Sánchez Roncero
+    given-names: Alejandro
+  - family-names: Lambrechts
+    given-names: Gaspard
+  - family-names: Leroy
+    given-names: Pascal
+  - family-names: Hansen
+    given-names: Julien
+  - family-names: Ögren
+    given-names: Petter
+  - family-names: Ernst
+    given-names: Damien
+preferred-citation:
+  type: conference-paper
+  title: "Memory-State Critic for Asymmetric Actor-Critic with Application to Vision-Based Pursuit-Evasion"
+  year: 2026
+  collection-title: "European Workshop on Reinforcement Learning (EWRL)"
+  authors:
+    - family-names: Louette
+      given-names: Arthur
+    - family-names: Sánchez Roncero
+      given-names: Alejandro
+    - family-names: Lambrechts
+      given-names: Gaspard
+    - family-names: Leroy
+      given-names: Pascal
+    - family-names: Hansen
+      given-names: Julien
+    - family-names: Ögren
+      given-names: Petter
+    - family-names: Ernst
+      given-names: Damien

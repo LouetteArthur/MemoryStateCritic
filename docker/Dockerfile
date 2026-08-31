@@ -79,9 +79,22 @@ RUN SITE=$(python3 -m pip show isaacsim | grep ^Location | awk '{print $2}') \
     && echo "[Docker] Isaac Sim EULA accepted at $SITE/isaacsim/kit/EULA_ACCEPTED"
 
 # ── Isaac Lab at pinned commit ────────────────────────────────────────────────
-ARG ISAACLAB_COMMIT=549768529e3859845794a05b8fd3dfd00edadc9e
+# This must be the *exact* tree that produced the paper's runs, which is not an
+# official Isaac Lab release: the host used github.com/colson-louis/IsaacLab at
+# d2579ea. That commit has since diverged from the fork's main (14 ahead / 4
+# behind), so cloning the fork and checking out the SHA is not reliable. It was
+# submitted upstream as PR #5725, and GitHub keeps pull-request head refs
+# fetchable from the official repository indefinitely -- so we fetch it there.
+#
+# Building with any other commit silently changes the physics layer and the runs
+# are no longer poolable with the existing ones.
+ARG ISAACLAB_COMMIT=d2579eacf8eba0864e2328f3f383a0fdb411e00b
+ARG ISAACLAB_FETCH_REF=refs/pull/5725/head
 RUN git clone https://github.com/isaac-sim/IsaacLab.git /IsaacLab \
-    && git -C /IsaacLab checkout ${ISAACLAB_COMMIT}
+    && git -C /IsaacLab fetch --no-tags origin ${ISAACLAB_FETCH_REF} \
+    && git -C /IsaacLab checkout ${ISAACLAB_COMMIT} \
+    && test "$(git -C /IsaacLab rev-parse HEAD)" = "${ISAACLAB_COMMIT}" \
+    && echo "[Docker] Isaac Lab pinned at ${ISAACLAB_COMMIT}"
 
 RUN for pkg in isaaclab isaaclab_rl isaaclab_tasks isaaclab_assets; do \
       python3 -m pip install --no-build-isolation --no-deps \

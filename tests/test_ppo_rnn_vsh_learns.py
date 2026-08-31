@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """End-to-end smoke test: PPO_RNN_VSH + CustomRunner must learn a toy POMDP.
 
 This test is a *gate* for the full pipeline. It constructs a minimal
@@ -60,9 +65,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SKRL_EXT_PARENT = _PROJECT_ROOT / "source" / "isaac_pursuit_evasion"
 sys.path.insert(0, str(_SKRL_EXT_PARENT))
 
-if "isaac_pursuit_evasion" not in sys.modules or not hasattr(
-    sys.modules["isaac_pursuit_evasion"], "skrl_ext"
-):
+if "isaac_pursuit_evasion" not in sys.modules or not hasattr(sys.modules["isaac_pursuit_evasion"], "skrl_ext"):
     _pkg = types.ModuleType("isaac_pursuit_evasion")
     _pkg.__path__ = [str(_SKRL_EXT_PARENT / "isaac_pursuit_evasion")]
     sys.modules["isaac_pursuit_evasion"] = _pkg
@@ -72,8 +75,10 @@ os.environ.setdefault("WANDB_MODE", "disabled")
 
 from isaac_pursuit_evasion.skrl_ext import CustomRunner  # noqa: E402
 from skrl.envs.wrappers.torch.base import Wrapper  # noqa: E402
-from skrl.utils.spaces.torch import flatten_tensorized_space, tensorize_space  # noqa: E402
-
+from skrl.utils.spaces.torch import (  # noqa: E402
+    flatten_tensorized_space,
+    tensorize_space,
+)
 
 # ---------------------------------------------------------------------------
 # Minimal batched POMDP — directly implements skrl's Wrapper interface so
@@ -128,12 +133,10 @@ class RememberTargetPOMDP(Wrapper):
 
     @property
     def observation_space(self) -> spaces.Space:
-        return spaces.Dict(
-            {
-                "image": spaces.Box(low=0.0, high=1.0, shape=(1, IMG_H, IMG_W), dtype=np.float32),
-                "past_actions": spaces.Box(low=-1.0, high=1.0, shape=(N_PAST_ACTIONS,), dtype=np.float32),
-            }
-        )
+        return spaces.Dict({
+            "image": spaces.Box(low=0.0, high=1.0, shape=(1, IMG_H, IMG_W), dtype=np.float32),
+            "past_actions": spaces.Box(low=-1.0, high=1.0, shape=(N_PAST_ACTIONS,), dtype=np.float32),
+        })
 
     @property
     def action_space(self) -> spaces.Space:
@@ -186,9 +189,7 @@ class RememberTargetPOMDP(Wrapper):
         self._agent = (self._agent + 0.25 * a.squeeze(-1)).clamp(-1.0, 1.0)
 
         # Slide the past-actions buffer: [a_{t-2}, a_{t-1}, a_t].
-        self._past_actions = torch.cat(
-            [self._past_actions[:, 1:], a], dim=-1
-        ).reshape(self._num_envs, N_PAST_ACTIONS)
+        self._past_actions = torch.cat([self._past_actions[:, 1:], a], dim=-1).reshape(self._num_envs, N_PAST_ACTIONS)
 
         reward = -(self._agent - self._target).abs().reshape(self._num_envs, 1)
         self._running_return += reward.reshape(self._num_envs)
@@ -211,7 +212,7 @@ class RememberTargetPOMDP(Wrapper):
             # Record the returns of completed episodes.
             self.completed_returns.extend(self._running_return[done].tolist())
             self._agent[done] = 0.0
-            self._target[done] = (torch.rand(done.sum(), generator=self._rng, device=self._device) * 2 - 1)
+            self._target[done] = torch.rand(done.sum(), generator=self._rng, device=self._device) * 2 - 1
             self._past_actions[done] = 0.0
             self._step_idx[done] = 0
             self._running_return[done] = 0.0
@@ -333,10 +334,9 @@ def test_ppo_rnn_vsh_learns_remember_target():
     runner.run(mode="train")
 
     returns = np.array(env.completed_returns, dtype=np.float64)
-    assert len(returns) >= 40, (
-        f"too few completed episodes to judge learning: {len(returns)}. "
-        f"Increase timesteps or num_envs."
-    )
+    assert (
+        len(returns) >= 40
+    ), f"too few completed episodes to judge learning: {len(returns)}. Increase timesteps or num_envs."
 
     # Fixed window sizes: capture the *untrained* baseline in "early" and the
     # *trained* policy in "late". A fractional window would let early creep
@@ -364,10 +364,10 @@ def test_ppo_rnn_vsh_learns_remember_target():
     # enough to pass reliably on CPU with the tiny training budget while
     # catching pipeline regressions (broken BPTT, dead gradients, etc.).
     assert improvement > 0.8, (
-        f"PPO_RNN_VSH did not learn the remember-target POMDP: "
+        "PPO_RNN_VSH did not learn the remember-target POMDP: "
         f"early mean return {early.mean():.3f}, late mean return {late.mean():.3f}, "
         f"improvement {improvement:.3f}. "
-        f"Either the pipeline is broken or the training budget is too small."
+        "Either the pipeline is broken or the training budget is too small."
     )
 
 
@@ -478,10 +478,9 @@ def test_ppo_rnn_sh_learns_remember_target():
     runner.run(mode="train")
 
     returns = np.array(env.completed_returns, dtype=np.float64)
-    assert len(returns) >= 40, (
-        f"too few completed episodes to judge learning: {len(returns)}. "
-        f"Increase timesteps or num_envs."
-    )
+    assert (
+        len(returns) >= 40
+    ), f"too few completed episodes to judge learning: {len(returns)}. Increase timesteps or num_envs."
 
     window = 200
     early = returns[:window]
@@ -495,8 +494,8 @@ def test_ppo_rnn_sh_learns_remember_target():
     )
 
     assert improvement > 0.8, (
-        f"PPO_RNN_SH did not learn the remember-target POMDP: "
+        "PPO_RNN_SH did not learn the remember-target POMDP: "
         f"early mean return {early.mean():.3f}, late mean return {late.mean():.3f}, "
         f"improvement {improvement:.3f}. "
-        f"Either the pipeline is broken or the training budget is too small."
+        "Either the pipeline is broken or the training budget is too small."
     )

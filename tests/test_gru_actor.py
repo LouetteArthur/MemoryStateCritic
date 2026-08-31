@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Sanity checks for the CNN+GRU actor and its stored-state recurrent pipeline.
 
 These tests do **not** require Isaac Sim — they import
@@ -47,9 +52,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SKRL_EXT_PARENT = _PROJECT_ROOT / "source" / "isaac_pursuit_evasion"
 sys.path.insert(0, str(_SKRL_EXT_PARENT))
 
-if "isaac_pursuit_evasion" not in sys.modules or not hasattr(
-    sys.modules["isaac_pursuit_evasion"], "skrl_ext"
-):
+if "isaac_pursuit_evasion" not in sys.modules or not hasattr(sys.modules["isaac_pursuit_evasion"], "skrl_ext"):
     _pkg = types.ModuleType("isaac_pursuit_evasion")
     _pkg.__path__ = [str(_SKRL_EXT_PARENT / "isaac_pursuit_evasion")]
     sys.modules["isaac_pursuit_evasion"] = _pkg
@@ -57,7 +60,6 @@ if "isaac_pursuit_evasion" not in sys.modules or not hasattr(
 from isaac_pursuit_evasion.skrl_ext.models.gaussian_cnn_rnn import (  # noqa: E402
     GaussianCNNGRUModel,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixture: a small CNN+GRU model with a Dict observation space whose
@@ -76,16 +78,10 @@ FLAT_OBS_SIZE = IMG_CHANNELS * IMG_H * IMG_W + PAST_ACTIONS_SIZE
 
 def _build_model(seed: int = 0, hidden_size: int = 32) -> GaussianCNNGRUModel:
     torch.manual_seed(seed)
-    observation_space = spaces.Dict(
-        {
-            "image": spaces.Box(
-                low=0.0, high=1.0, shape=(IMG_CHANNELS, IMG_H, IMG_W), dtype=np.float32
-            ),
-            "past_actions": spaces.Box(
-                low=-1.0, high=1.0, shape=(PAST_ACTIONS_SIZE,), dtype=np.float32
-            ),
-        }
-    )
+    observation_space = spaces.Dict({
+        "image": spaces.Box(low=0.0, high=1.0, shape=(IMG_CHANNELS, IMG_H, IMG_W), dtype=np.float32),
+        "past_actions": spaces.Box(low=-1.0, high=1.0, shape=(PAST_ACTIONS_SIZE,), dtype=np.float32),
+    })
     action_space = spaces.Box(low=-1.0, high=1.0, shape=(ACTION_DIM,), dtype=np.float32)
     model = GaussianCNNGRUModel(
         observation_space=observation_space,
@@ -140,10 +136,9 @@ def test_past_actions_change_output():
     assert out_a.shape == (1, ACTION_DIM)
     # Any meaningful difference is fine; use a conservative threshold so we
     # catch "identical" (broken) without being noise-sensitive.
-    assert not torch.allclose(out_a, out_b, atol=1e-6), (
-        f"past_actions had no effect on policy output: max diff "
-        f"{(out_a - out_b).abs().max().item():.2e}"
-    )
+    assert not torch.allclose(
+        out_a, out_b, atol=1e-6
+    ), f"past_actions had no effect on policy output: max diff {(out_a - out_b).abs().max().item():.2e}"
 
 
 # ---------------------------------------------------------------------------
@@ -283,9 +278,7 @@ def test_stored_state_alignment_detects_off_by_one():
     with torch.no_grad():
         for t in range(num_steps):
             flat_t = _flat_obs(images[t], past_actions[t])
-            wrong_out, _, _ = model.compute(
-                {"states": flat_t, "rnn": [h_sequence[t + 1]]}
-            )
+            wrong_out, _, _ = model.compute({"states": flat_t, "rnn": [h_sequence[t + 1]]})
             if not torch.allclose(wrong_out, rollout_actions[t], atol=1e-5):
                 any_disagreement = True
                 break

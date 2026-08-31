@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Unit tests for the learned opponent-identifier embedding e(k_t) wiring.
 
 Covers the paper-faithful V(s, z, z_opp, e(k_t)) critic head added for
@@ -28,13 +33,13 @@ import gymnasium as gym
 import pytest
 import torch
 
-from source.isaac_pursuit_evasion.isaac_pursuit_evasion.skrl_ext.models.vsh_critic import (
-    VshCriticModel,
-    vsh_critic_model,
-)
 from source.isaac_pursuit_evasion.isaac_pursuit_evasion.skrl_ext.models.history_state_critic import (
     HistoryStateCriticModel,
     history_state_critic_model,
+)
+from source.isaac_pursuit_evasion.isaac_pursuit_evasion.skrl_ext.models.vsh_critic import (
+    VshCriticModel,
+    vsh_critic_model,
 )
 
 
@@ -85,8 +90,11 @@ def test_forward_rollout_shape():
     """2D rollout shape: states (N, state_dim), z (N, h), opp_id (N, 1)."""
     state_dim, h, z_opp, k_dim = 8, 16, 4, 8
     m = _make_model(
-        state_dim=state_dim, actor_hidden_size=h,
-        z_opp_dim=z_opp, opp_id_dim=k_dim, opp_id_num=16,
+        state_dim=state_dim,
+        actor_hidden_size=h,
+        z_opp_dim=z_opp,
+        opp_id_dim=k_dim,
+        opp_id_num=16,
     )
     n = 5
     inputs = {
@@ -103,8 +111,7 @@ def test_forward_bptt_shape():
     """3D BPTT shape: states (num_seq, seq_len, state_dim) — embedding lookup
     must reshape back to (num_seq, seq_len, k_dim)."""
     state_dim, h, k_dim = 8, 16, 8
-    m = _make_model(state_dim=state_dim, actor_hidden_size=h,
-                    opp_id_dim=k_dim, opp_id_num=16)
+    m = _make_model(state_dim=state_dim, actor_hidden_size=h, opp_id_dim=k_dim, opp_id_num=16)
     num_seq, seq_len = 3, 4
     inputs = {
         "states": torch.zeros(num_seq, seq_len, state_dim),
@@ -123,28 +130,22 @@ def test_different_ids_produce_different_values():
     """
     torch.manual_seed(0)
     state_dim, h, k_dim = 8, 16, 8
-    m = _make_model(state_dim=state_dim, actor_hidden_size=h,
-                    opp_id_dim=k_dim, opp_id_num=16)
+    m = _make_model(state_dim=state_dim, actor_hidden_size=h, opp_id_dim=k_dim, opp_id_num=16)
     n = 4
     states = torch.randn(n, state_dim)
     z = torch.randn(n, h)
-    v0, _ = m.compute({"states": states, "z_theta": z,
-                       "opp_id": torch.zeros(n, 1, dtype=torch.long)})
-    v1, _ = m.compute({"states": states, "z_theta": z,
-                       "opp_id": torch.ones(n, 1, dtype=torch.long)})
+    v0, _ = m.compute({"states": states, "z_theta": z, "opp_id": torch.zeros(n, 1, dtype=torch.long)})
+    v1, _ = m.compute({"states": states, "z_theta": z, "opp_id": torch.ones(n, 1, dtype=torch.long)})
     # Probabilistic guarantee: with random init, the chance that the
     # embedding's k=0 row equals k=1 row exactly is zero.
-    assert not torch.allclose(v0, v1), (
-        "opp_id is not affecting the value head — embedding kwarg dropped somewhere."
-    )
+    assert not torch.allclose(v0, v1), "opp_id is not affecting the value head — embedding kwarg dropped somewhere."
 
 
 def test_missing_opp_id_uses_zero_fallback():
     """Initial-eval / bootstrap path: no ``opp_id`` in inputs must not crash;
     the critic produces a deterministic output using the zero fallback."""
     state_dim, h, k_dim = 8, 16, 8
-    m = _make_model(state_dim=state_dim, actor_hidden_size=h,
-                    opp_id_dim=k_dim, opp_id_num=16)
+    m = _make_model(state_dim=state_dim, actor_hidden_size=h, opp_id_dim=k_dim, opp_id_num=16)
     n = 4
     states = torch.zeros(n, state_dim)
     z = torch.zeros(n, h)
@@ -166,9 +167,7 @@ def test_opp_id_ignored_when_disabled():
     }
     v0, _ = m.compute(common)
     v1, _ = m.compute({**common, "opp_id": torch.arange(n).reshape(n, 1)})
-    assert torch.allclose(v0, v1), (
-        "opp_id is being read by a critic that has opp_id_dim=0 — would taint Vsz/Vsh."
-    )
+    assert torch.allclose(v0, v1), "opp_id is being read by a critic that has opp_id_dim=0 — would taint Vsz/Vsh."
 
 
 # --------------------------------------------------------------------------
@@ -188,7 +187,9 @@ def _make_shh_model(
         observation_space=obs_space,
         action_space=act_space,
         device="cpu",
-        image_channels=2, image_height=64, image_width=64,
+        image_channels=2,
+        image_height=64,
+        image_width=64,
         past_actions_size=4,
         rnn={"hidden_size": 32, "num_layers": 1, "sequence_length": 4},
         num_envs=1,
@@ -238,9 +239,7 @@ def test_shh_different_ids_produce_different_values():
     }
     v0, _ = m.compute({**base, "opp_id": torch.zeros(n, 1, dtype=torch.long)})
     v1, _ = m.compute({**base, "opp_id": torch.ones(n, 1, dtype=torch.long)})
-    assert not torch.allclose(v0, v1), (
-        "SHH critic ignores opp_id — embedding wiring is broken."
-    )
+    assert not torch.allclose(v0, v1), "SHH critic ignores opp_id — embedding wiring is broken."
 
 
 def test_shh_factory_threads_kwargs():
@@ -251,7 +250,9 @@ def test_shh_factory_threads_kwargs():
         observation_space=obs_space,
         action_space=act_space,
         device="cpu",
-        image_channels=2, image_height=64, image_width=64,
+        image_channels=2,
+        image_height=64,
+        image_width=64,
         past_actions_size=4,
         rnn={"hidden_size": 32, "num_layers": 1, "sequence_length": 4},
         cnn_feature_size=16,

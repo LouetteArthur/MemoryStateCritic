@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """pytest configuration for running without Isaac Sim / Isaac Lab.
 
 Sets up two things:
@@ -10,11 +15,11 @@ Sets up two things:
    per-test ``_patch_isaac_imports`` fixture alone cannot handle them.
 """
 
-import sys
-import types
 import importlib
 import importlib.abc
 import importlib.util
+import sys
+import types
 from pathlib import Path
 from unittest import mock
 

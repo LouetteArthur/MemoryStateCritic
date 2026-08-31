@@ -79,3 +79,13 @@ Agents.md
 
 # Isaac Lab clone (installed locally, not part of project source)
 IsaacLab/
+# Sorties de figures : seul le jeu du papier est suivi.
+figures/*
+!figures/paper/
+
+# Local assistant/editor state — never part of a release
+.claude/
+.cursor/
+.aider*
+.continue/
+.windsurf/

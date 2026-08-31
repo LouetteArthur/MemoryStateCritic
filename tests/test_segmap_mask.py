@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Regression tests for the segmap binary-mask logic.
 
 The bug we are guarding against: Replicator's semantic_segmentation
@@ -72,8 +77,8 @@ def _make_rgba(n: int = 2, h: int = 8, w: int = 8) -> tuple[torch.Tensor, torch.
     # In env 0, place a 3x3 "labeled opponent" blob at (2:5, 2:5).
     # Replicator picks a non-black color per class; here we use a vivid red.
     rgba[0, 2:5, 2:5, 0] = 200  # R channel non-zero
-    rgba[0, 2:5, 2:5, 1] = 30   # some G
-    rgba[0, 2:5, 2:5, 2] = 30   # some B
+    rgba[0, 2:5, 2:5, 1] = 30  # some G
+    rgba[0, 2:5, 2:5, 2] = 30  # some B
     expected = torch.zeros((h, w), dtype=torch.float32)
     expected[2:5, 2:5] = 1.0
     return rgba, expected

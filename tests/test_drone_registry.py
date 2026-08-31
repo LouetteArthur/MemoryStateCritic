@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for the drone registry and config wiring.
 
 These tests mock Isaac Sim / Isaac Lab dependencies so they can run in a
@@ -20,6 +25,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 # Stub out heavy Isaac Sim / Isaac Lab imports before touching project code.
 # ---------------------------------------------------------------------------
+
 
 class _AttrModule(types.ModuleType):
     """Module that returns a MagicMock for any attribute that doesn't exist,
@@ -142,9 +148,11 @@ _SENTINEL = object()
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _import_registry():
     """Import the registry module (after stubs are in place)."""
     from source.isaac_pursuit_evasion.assets import drone_registry
+
     return drone_registry
 
 
@@ -186,6 +194,7 @@ def _import_cfg_module():
 # ---------------------------------------------------------------------------
 # Tests: drone_registry.py
 # ---------------------------------------------------------------------------
+
 
 class TestDroneRegistry:
     def test_builtin_drones_registered(self):
@@ -252,6 +261,7 @@ class TestDroneRegistry:
 # ---------------------------------------------------------------------------
 # Tests: pursuit_evasion_cfg.py wiring
 # ---------------------------------------------------------------------------
+
 
 class TestCfgDroneNameWiring:
     """Verify that config builder functions propagate drone_name correctly."""
@@ -333,10 +343,7 @@ class TestCfgDroneNameWiring:
 
     def test_ppo_rnn_asym_in_runner_guard(self):
         """Verify PPO_RNN_ASYM is handled by _generate_agent in runner.py."""
-        runner_path = (
-            _PROJECT_ROOT
-            / "source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/runner.py"
-        )
+        runner_path = _PROJECT_ROOT / "source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/runner.py"
         src = runner_path.read_text()
         # The guard list must include ppo_rnn_asym
         assert '"ppo_rnn_asym"' in src
@@ -347,10 +354,7 @@ class TestCfgDroneNameWiring:
         The symmetric PPO variant (class: PPO) must use the dict observation_space
         for both actor and critic, not the flat state_space.
         """
-        runner_path = (
-            _PROJECT_ROOT
-            / "source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/runner.py"
-        )
+        runner_path = _PROJECT_ROOT / "source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/runner.py"
         src = runner_path.read_text()
         # The _generate_models method must check agent_class before swapping
         assert "agent_class in _asym_agents" in src
@@ -363,6 +367,7 @@ class TestCfgDroneNameWiring:
 # ---------------------------------------------------------------------------
 # Tests: env source code inspection (no instantiation needed)
 # ---------------------------------------------------------------------------
+
 
 class TestEnvDroneSpecWiring:
     """Verify that the env source uses drone_spec fields correctly."""

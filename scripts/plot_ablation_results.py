@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Copyright (c) 2026, the IsaacPursuitEvasion authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Generate paper-quality ablation plots from wandb logs.
 
 Pulls completed runs matching the critic-ablation naming convention
 ``<Critic>_<arena>_s<seed>`` (e.g. ``Vsz_wall_s42``) from a wandb
 project, aggregates mean / std across seeds, and saves three figures
-suitable for the CoRL submission:
+suitable for the paper:
 
   1. ``reward_evolution.{pdf,png}`` — pursuer episode return over training,
      one panel per arena (wall, open). Methods in legend, shaded ±1 std.
@@ -18,7 +28,7 @@ suitable for the CoRL submission:
 Usage::
 
     python scripts/plot_ablation_results.py \\
-        --entity louettearthur --project critic_ablation \\
+        --entity <WANDB_ENTITY> --project critic_ablation \\
         --output-dir figures/ablation
 
 Requires::
@@ -26,7 +36,7 @@ Requires::
     pip install wandb pandas matplotlib seaborn
 
 Caching: pass ``--cache figures/ablation/runs.pkl`` and the first call
-will materialise the wandb history to disk; subsequent calls re-use it
+will materialise the wandb history to disk; subsequent calls reuse it
 so you can iterate on plots without paying API latency each time.
 """
 
@@ -65,20 +75,35 @@ _TICK_FORMATTER = mticker.FuncFormatter(_si_step_formatter)
 
 CRITICS = ["Vs", "Vsh", "Vsz", "Vsoa"]
 
+# The (critic, arena) -> seeds grid actually used for Figures 3 and 4, recorded
+# exactly as it was run. Note that open-arena Vsz differs from its Vs / Vsh
+# siblings; that is a fact about how the sweep was executed, not a design
+# choice. V(s,o,a) has three seeds per arena rather than five (paper, Sec. 4.3).
+PAPER_GRID: dict[tuple[str, str], set[int]] = {
+    ("Vs", "open"): {1, 5, 7, 42, 123},
+    ("Vsh", "open"): {1, 5, 7, 42, 123},
+    ("Vsz", "open"): {1, 7, 15, 27, 42},
+    ("Vsoa", "open"): {1, 42, 123},
+    ("Vs", "wall"): {1, 5, 15, 42, 123},
+    ("Vsh", "wall"): {1, 5, 15, 42, 123},
+    ("Vsz", "wall"): {1, 5, 15, 42, 123},
+    ("Vsoa", "wall"): {1, 42, 123},
+}
+
 # Labels follow the paper's notation update: critic-side recurrent encoding is
 # z^c (was h); actor-memory encoding is z^a (was z). V(o) is no longer shown.
 CRITIC_LABELS = {
-    "Vs":   r"$V(s)$",
-    "Vsh":  r"$V(s, z^c)$",
-    "Vsz":  r"$V(s, z^a)$",
+    "Vs": r"$V(s)$",
+    "Vsh": r"$V(s, z^c)$",
+    "Vsz": r"$V(s, z^a)$",
     "Vsoa": r"$V(s, o, a)$",
 }
 
 # Colour-blind-friendly palette (Wong 2011, reordered)
 CRITIC_COLORS = {
-    "Vs":   "#0072B2",  # blue
-    "Vsh":  "#009E73",  # green   — history-state V(s, z^c)
-    "Vsz":  "#E69F00",  # orange  — memory-state V(s, z^a)
+    "Vs": "#0072B2",  # blue
+    "Vsh": "#009E73",  # green   — history-state V(s, z^c)
+    "Vsz": "#E69F00",  # orange  — memory-state V(s, z^a)
     "Vsoa": "#CC79A7",  # reddish purple
 }
 
@@ -86,12 +111,12 @@ ARENAS = ["wall", "open"]
 ARENA_COLORS = {"wall": "#4C72B0", "open": "#DD8452"}
 
 # Wandb metric keys (the skrl trainer prefixes env extras with "Info / ").
-KEY_REWARD     = "Info / Reward/Pursuer/total"
+KEY_REWARD = "Info / Reward/Pursuer/total"
 KEY_TR_CAPTURE = "Info / TerminationRate/pursuer_capture"
-KEY_TR_POOB    = "Info / TerminationRate/pursuer_out_of_bounds"
-KEY_TR_EOOB    = "Info / TerminationRate/evader_out_of_bounds"
-KEY_TR_PWALL   = "Info / TerminationRate/pursuer_wall_collision"
-KEY_TR_EWALL   = "Info / TerminationRate/evader_wall_collision"
+KEY_TR_POOB = "Info / TerminationRate/pursuer_out_of_bounds"
+KEY_TR_EOOB = "Info / TerminationRate/evader_out_of_bounds"
+KEY_TR_PWALL = "Info / TerminationRate/pursuer_wall_collision"
+KEY_TR_EWALL = "Info / TerminationRate/evader_wall_collision"
 KEY_TR_TIMEOUT = "Info / TerminationRate/timeout"
 
 # Heuristics paired with the corresponding evader controller in the env.
@@ -99,16 +124,21 @@ KEY_TR_TIMEOUT = "Info / TerminationRate/timeout"
 # the open-/wall-arena sweep doesn't pit the pursuer against an RL evader.
 HEURISTICS = ["hover", "circular", "lemniscate", "apf_evader"]
 HEURISTIC_LABELS = {
-    "hover":       "Hover",
-    "circular":    "Circular",
-    "lemniscate":  "Lemniscate",
-    "apf_evader":  "APF",
-    "rl":          "RL",
+    "hover": "Hover",
+    "circular": "Circular",
+    "lemniscate": "Lemniscate",
+    "apf_evader": "APF",
+    "rl": "RL",
 }
 
 METRIC_KEYS = [
-    KEY_REWARD, KEY_TR_CAPTURE, KEY_TR_POOB, KEY_TR_EOOB,
-    KEY_TR_PWALL, KEY_TR_EWALL, KEY_TR_TIMEOUT,
+    KEY_REWARD,
+    KEY_TR_CAPTURE,
+    KEY_TR_POOB,
+    KEY_TR_EOOB,
+    KEY_TR_PWALL,
+    KEY_TR_EWALL,
+    KEY_TR_TIMEOUT,
 ]
 
 NAME_RE = re.compile(r"^(Vs|Vsz|Vsh|Vo|Vsoa)_(wall|open)_s(\d+)$")
@@ -171,8 +201,10 @@ def fetch_runs(
             latest[key] = run
 
     if require_config:
-        print(f"  config filter {require_config}: kept {len(latest)} runs, "
-              f"skipped {n_skip_config} (config mismatch) + {n_skip_state} (not finished)")
+        print(
+            f"  config filter {require_config}: kept {len(latest)} runs, "
+            f"skipped {n_skip_config} (config mismatch) + {n_skip_state} (not finished)"
+        )
 
     out: list[RunData] = []
     for (critic, arena, seed), run in sorted(latest.items()):
@@ -269,9 +301,7 @@ def aggregate_metric(
         runs = traces[critic]
         if not runs:
             continue
-        interp = np.stack(
-            [np.interp(grid, r["env_step"].to_numpy(), r[metric].to_numpy()) for r in runs]
-        )
+        interp = np.stack([np.interp(grid, r["env_step"].to_numpy(), r[metric].to_numpy()) for r in runs])
         n = interp.shape[0]
         if aggregation == "iqm_range" and n >= 3:
             # Rank seeds by their final-window mean of this metric, then drop
@@ -279,15 +309,15 @@ def aggregate_metric(
             # For n=5 → trim 1 from each tail → 3 seeds kept (mean of middle 3).
             window = max(1, n_grid // 10)
             final_score = interp[:, -window:].mean(axis=1)
-            order = np.argsort(final_score)               # ascending: worst -> best
+            order = np.argsort(final_score)  # ascending: worst -> best
             trim = int(np.floor(n / 4))
             kept_idx = order[trim : n - trim] if trim > 0 else order
-            kept = interp[kept_idx]                       # (n_kept, n_grid)
+            kept = interp[kept_idx]  # (n_kept, n_grid)
             out[critic] = {
                 "step": grid,
-                "mean": kept.mean(axis=0),                # IQM curve
-                "lower": kept.min(axis=0),                # worst surviving seed
-                "upper": kept.max(axis=0),                # best  surviving seed
+                "mean": kept.mean(axis=0),  # IQM curve
+                "lower": kept.min(axis=0),  # worst surviving seed
+                "upper": kept.max(axis=0),  # best  surviving seed
                 "n": n,
                 "n_kept": int(kept.shape[0]),
             }
@@ -300,9 +330,9 @@ def aggregate_metric(
             # tendency.
             window = max(1, n_grid // 10)
             final_score = interp[:, -window:].mean(axis=1)
-            order = np.argsort(final_score)               # ascending
+            order = np.argsort(final_score)  # ascending
             k = min(3, n)
-            kept_idx = order[-k:]                          # top-k
+            kept_idx = order[-k:]  # top-k
             kept = interp[kept_idx]
             out[critic] = {
                 "step": grid,
@@ -339,14 +369,8 @@ def compute_final_win_rates(data: list[RunData], last_n: int = 5) -> pd.DataFram
         if sub.empty:
             continue
         tail = sub.tail(last_n)
-        win = (
-            tail[KEY_TR_CAPTURE].fillna(0.0)
-            + tail[KEY_TR_EOOB].fillna(0.0)
-            + tail[KEY_TR_EWALL].fillna(0.0)
-        ).mean()
-        rows.append(
-            {"critic": rd.critic, "arena": rd.arena, "seed": rd.seed, "win_rate": float(win)}
-        )
+        win = (tail[KEY_TR_CAPTURE].fillna(0.0) + tail[KEY_TR_EOOB].fillna(0.0) + tail[KEY_TR_EWALL].fillna(0.0)).mean()
+        rows.append({"critic": rd.critic, "arena": rd.arena, "seed": rd.seed, "win_rate": float(win)})
     return pd.DataFrame(rows)
 
 
@@ -357,21 +381,19 @@ def compute_final_win_rates(data: list[RunData], last_n: int = 5) -> pd.DataFram
 
 def _apply_paper_style() -> None:
     sns.set_context("paper", font_scale=1.15)
-    plt.rcParams.update(
-        {
-            "font.family": "serif",
-            "axes.labelsize": 11,
-            "axes.titlesize": 12,
-            "legend.fontsize": 9,
-            "xtick.labelsize": 9,
-            "ytick.labelsize": 9,
-            "axes.spines.top": False,
-            "axes.spines.right": False,
-            "axes.grid": True,
-            "grid.alpha": 0.25,
-            "grid.linestyle": "--",
-        }
-    )
+    plt.rcParams.update({
+        "font.family": "serif",
+        "axes.labelsize": 11,
+        "axes.titlesize": 12,
+        "legend.fontsize": 9,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.grid": True,
+        "grid.alpha": 0.25,
+        "grid.linestyle": "--",
+    })
 
 
 def _plot_metric_panels(
@@ -388,9 +410,7 @@ def _plot_metric_panels(
     """Generic helper: a grid of (metric, arena, title) panels."""
     _apply_paper_style()
     nrows = (len(panels) + ncols - 1) // ncols
-    fig, axes = plt.subplots(
-        nrows, ncols, figsize=(5.0 * ncols, 3.4 * nrows), sharex=False, sharey=(ylim is not None)
-    )
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.0 * ncols, 3.4 * nrows), sharex=False, sharey=(ylim is not None))
     axes_flat = np.array(axes).reshape(-1)
 
     # Collect line handles across all panels so the figure legend has every
@@ -398,7 +418,9 @@ def _plot_metric_panels(
     legend_lines: dict[str, plt.Line2D] = {}
     for ax, (metric, arena, title) in zip(axes_flat, panels):
         agg = aggregate_metric(
-            data, metric, arena,
+            data,
+            metric,
+            arena,
             env_timesteps_per_run=env_timesteps,
             aggregation=aggregation,
         )
@@ -408,7 +430,10 @@ def _plot_metric_panels(
             a = agg[critic]
             color = CRITIC_COLORS[critic]
             (line,) = ax.plot(
-                a["step"], a["mean"], color=color, linewidth=1.8,
+                a["step"],
+                a["mean"],
+                color=color,
+                linewidth=1.8,
                 label=CRITIC_LABELS[critic],
             )
             if "lower" in a:
@@ -417,8 +442,12 @@ def _plot_metric_panels(
                 lo = a["mean"] - a["std"]
                 hi = a["mean"] + a["std"]
             ax.fill_between(
-                a["step"], lo, hi,
-                color=color, alpha=0.18, linewidth=0,
+                a["step"],
+                lo,
+                hi,
+                color=color,
+                alpha=0.18,
+                linewidth=0,
             )
             legend_lines.setdefault(critic, line)
         ax.set_title(title)
@@ -434,7 +463,7 @@ def _plot_metric_panels(
     for ax in axes_flat[: nrows * ncols]:
         ax.set_ylabel(ylabel)
     # blank unused panels
-    for ax in axes_flat[len(panels):]:
+    for ax in axes_flat[len(panels) :]:
         ax.set_visible(False)
 
     if legend_handles_labels is not None:
@@ -454,13 +483,16 @@ def _plot_metric_panels(
 
 
 def plot_reward_evolution(
-    data: list[RunData], output_dir: Path, env_timesteps: int = 100_000,
+    data: list[RunData],
+    output_dir: Path,
+    env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
 ) -> None:
     panels = [(KEY_REWARD, arena, f"{arena.capitalize()} arena") for arena in ARENAS]
     suptitle = "Pursuer episode return"
     _plot_metric_panels(
-        data, panels,
+        data,
+        panels,
         output_path=output_dir / "reward_evolution",
         ylabel="Pursuer episode return",
         suptitle=suptitle,
@@ -471,7 +503,9 @@ def plot_reward_evolution(
 
 
 def plot_capture_rate_evolution(
-    data: list[RunData], output_dir: Path, env_timesteps: int = 100_000,
+    data: list[RunData],
+    output_dir: Path,
+    env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
 ) -> None:
     """Same layout as plot_reward_evolution, but the y-axis is the pursuer
@@ -482,7 +516,8 @@ def plot_capture_rate_evolution(
     panels = [(KEY_TR_CAPTURE, arena, f"{arena.capitalize()} arena") for arena in ARENAS]
     suptitle = "Pursuer capture rate"
     _plot_metric_panels(
-        data, panels,
+        data,
+        panels,
         output_path=output_dir / "capture_rate_evolution",
         ylim=(-0.02, 1.02),
         ylabel="Pursuer capture rate",
@@ -494,17 +529,20 @@ def plot_capture_rate_evolution(
 
 
 def plot_terminations_wall(
-    data: list[RunData], output_dir: Path, env_timesteps: int = 100_000,
+    data: list[RunData],
+    output_dir: Path,
+    env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
 ) -> None:
     panels = [
         (KEY_TR_CAPTURE, "wall", "Pursuer capture"),
-        (KEY_TR_POOB,    "wall", "Pursuer out-of-bounds"),
-        (KEY_TR_PWALL,   "wall", "Pursuer wall collision"),
+        (KEY_TR_POOB, "wall", "Pursuer out-of-bounds"),
+        (KEY_TR_PWALL, "wall", "Pursuer wall collision"),
         (KEY_TR_TIMEOUT, "wall", "Timeout"),
     ]
     _plot_metric_panels(
-        data, panels,
+        data,
+        panels,
         output_path=output_dir / "termination_wall",
         ylim=(-0.02, 1.02),
         ylabel="Rate",
@@ -526,9 +564,7 @@ REWARD_COMPONENTS = [
 ]
 
 
-def plot_reward_component_magnitudes(
-    data: list[RunData], output_dir: Path, entity: str, project: str
-) -> None:
+def plot_reward_component_magnitudes(data: list[RunData], output_dir: Path, entity: str, project: str) -> None:
     """Per-(critic,arena) bar chart of mean ± std of each reward component's
     final per-episode value.
 
@@ -558,16 +594,12 @@ def plot_reward_component_magnitudes(
             v = run.summary.get(f"Info / Reward/Pursuer/{key}")
             if v is None:
                 continue
-            rows.append({"critic": critic, "arena": arena, "seed": seed,
-                         "component": key, "value": float(v)})
+            rows.append({"critic": critic, "arena": arena, "seed": seed, "component": key, "value": float(v)})
     df = pd.DataFrame(rows)
     if df.empty:
         print("[WARN] no reward-component data; skipping magnitude plot")
         return
-    summary = (
-        df.groupby(["arena", "critic", "component"])["value"]
-          .agg(["mean", "std", "count"]).reset_index()
-    )
+    summary = df.groupby(["arena", "critic", "component"])["value"].agg(["mean", "std", "count"]).reset_index()
     summary.to_csv(output_dir / "reward_component_magnitudes.csv", index=False)
 
     _apply_paper_style()
@@ -583,9 +615,17 @@ def plot_reward_component_magnitudes(
             means = np.array([sub.loc[c, "mean"] if c in sub.index else 0.0 for c in component_keys])
             stds = np.array([sub.loc[c, "std"] if c in sub.index else 0.0 for c in component_keys])
             offset = (i - (len(CRITICS) - 1) / 2.0) * width
-            ax.bar(x + offset, means, width, yerr=stds, capsize=2,
-                   color=CRITIC_COLORS[critic], edgecolor="black", linewidth=0.4,
-                   label=CRITIC_LABELS[critic])
+            ax.bar(
+                x + offset,
+                means,
+                width,
+                yerr=stds,
+                capsize=2,
+                color=CRITIC_COLORS[critic],
+                edgecolor="black",
+                linewidth=0.4,
+                label=CRITIC_LABELS[critic],
+            )
         ax.set_title(f"{arena.capitalize()} arena")
         ax.set_xticks(x)
         ax.set_xticklabels(component_labels, rotation=30, ha="right")
@@ -599,9 +639,7 @@ def plot_reward_component_magnitudes(
     plt.close(fig)
 
 
-def plot_per_heuristic_capture(
-    data: list[RunData], output_dir: Path, entity: str, project: str
-) -> None:
+def plot_per_heuristic_capture(data: list[RunData], output_dir: Path, entity: str, project: str) -> None:
     """Per-(critic, arena, heuristic) bar chart of pursuer win rate, plus
     mean episode step at capture vs at non-capture termination.
 
@@ -635,25 +673,33 @@ def plot_per_heuristic_capture(
                     saw_any = True
             if saw_any:
                 rate_rows.append({
-                    "critic": critic, "arena": arena, "seed": seed,
-                    "heuristic": h, "win_rate": win_rate,
+                    "critic": critic,
+                    "arena": arena,
+                    "seed": seed,
+                    "heuristic": h,
+                    "win_rate": win_rate,
                 })
             for outcome in ("pursuer_capture", "timeout"):
                 v = run.summary.get(f"Info / TerminationStep/{h}/{outcome}/mean")
                 if v is not None:
                     step_rows.append({
-                        "critic": critic, "arena": arena, "seed": seed,
-                        "heuristic": h, "outcome": outcome, "step_mean": float(v),
+                        "critic": critic,
+                        "arena": arena,
+                        "seed": seed,
+                        "heuristic": h,
+                        "outcome": outcome,
+                        "step_mean": float(v),
                     })
     if not rate_rows:
-        print("[WARN] no per-heuristic data; skipping per-heuristic plots "
-              "(re-run training after the stats_tracker update)")
+        print(
+            "[WARN] no per-heuristic data; skipping per-heuristic plots "
+            "(re-run training after the stats_tracker update)"
+        )
         return
 
     rate_df = pd.DataFrame(rate_rows)
     rate_summary = (
-        rate_df.groupby(["arena", "critic", "heuristic"])["win_rate"]
-        .agg(["mean", "std", "count"]).reset_index()
+        rate_df.groupby(["arena", "critic", "heuristic"])["win_rate"].agg(["mean", "std", "count"]).reset_index()
     )
     rate_summary.to_csv(output_dir / "per_heuristic_win_rate.csv", index=False)
 
@@ -665,15 +711,21 @@ def plot_per_heuristic_capture(
     width = 0.16
     for ax, arena in zip(axes, ARENAS):
         for i, critic in enumerate(CRITICS):
-            sub = rate_summary[
-                (rate_summary["arena"] == arena) & (rate_summary["critic"] == critic)
-            ].set_index("heuristic")
+            sub = rate_summary[(rate_summary["arena"] == arena) & (rate_summary["critic"] == critic)].set_index(
+                "heuristic"
+            )
             means = np.array([sub.loc[h, "mean"] if h in sub.index else np.nan for h in HEURISTICS])
             stds = np.array([sub.loc[h, "std"] if h in sub.index else 0.0 for h in HEURISTICS])
             offset = (i - (len(CRITICS) - 1) / 2.0) * width
             ax.bar(
-                x + offset, np.nan_to_num(means), width, yerr=stds, capsize=2,
-                color=CRITIC_COLORS[critic], edgecolor="black", linewidth=0.4,
+                x + offset,
+                np.nan_to_num(means),
+                width,
+                yerr=stds,
+                capsize=2,
+                color=CRITIC_COLORS[critic],
+                edgecolor="black",
+                linewidth=0.4,
                 label=CRITIC_LABELS[critic],
             )
         ax.set_title(f"{arena.capitalize()} arena")
@@ -692,7 +744,8 @@ def plot_per_heuristic_capture(
         step_df = pd.DataFrame(step_rows)
         step_summary = (
             step_df.groupby(["arena", "critic", "heuristic", "outcome"])["step_mean"]
-            .agg(["mean", "std", "count"]).reset_index()
+            .agg(["mean", "std", "count"])
+            .reset_index()
         )
         step_summary.to_csv(output_dir / "per_heuristic_episode_step.csv", index=False)
         print(f"  per_heuristic_episode_step.csv saved ({len(step_summary)} rows)")
@@ -711,13 +764,13 @@ def plot_termination_heatmap(data: list[RunData], output_dir: Path, last_n: int 
     """
     REASONS_OPEN = [
         (KEY_TR_CAPTURE, "Capture"),
-        (KEY_TR_POOB,    "P. OOB"),
+        (KEY_TR_POOB, "P. OOB"),
         (KEY_TR_TIMEOUT, "Timeout"),
     ]
     REASONS_WALL = [
         (KEY_TR_CAPTURE, "Capture"),
-        (KEY_TR_POOB,    "P. OOB"),
-        (KEY_TR_PWALL,   "P. wall hit"),
+        (KEY_TR_POOB, "P. OOB"),
+        (KEY_TR_PWALL, "P. wall hit"),
         (KEY_TR_TIMEOUT, "Timeout"),
     ]
 
@@ -730,31 +783,19 @@ def plot_termination_heatmap(data: list[RunData], output_dir: Path, last_n: int 
         for key, _label in reasons_for_arena:
             if key not in h.columns:
                 # The metric never fired in this run; treat as 0.
-                rows.append(
-                    {"critic": rd.critic, "arena": rd.arena, "seed": rd.seed,
-                     "reason": key, "rate": 0.0}
-                )
+                rows.append({"critic": rd.critic, "arena": rd.arena, "seed": rd.seed, "reason": key, "rate": 0.0})
                 continue
             sub = h[["_step", key]].dropna(subset=[key])
             if sub.empty:
-                rows.append(
-                    {"critic": rd.critic, "arena": rd.arena, "seed": rd.seed,
-                     "reason": key, "rate": 0.0}
-                )
+                rows.append({"critic": rd.critic, "arena": rd.arena, "seed": rd.seed, "reason": key, "rate": 0.0})
                 continue
             rate = float(sub.tail(last_n)[key].mean())
-            rows.append(
-                {"critic": rd.critic, "arena": rd.arena, "seed": rd.seed,
-                 "reason": key, "rate": rate}
-            )
+            rows.append({"critic": rd.critic, "arena": rd.arena, "seed": rd.seed, "reason": key, "rate": rate})
     if not rows:
         print("[WARN] no termination data; skipping heatmap")
         return
     df = pd.DataFrame(rows)
-    summary = (
-        df.groupby(["arena", "critic", "reason"])["rate"]
-          .agg(["mean", "std", "count"]).reset_index()
-    )
+    summary = df.groupby(["arena", "critic", "reason"])["rate"].agg(["mean", "std", "count"]).reset_index()
     summary["std"] = summary["std"].fillna(0.0)  # std is NaN if only 1 seed
     summary.to_csv(output_dir / "termination_summary.csv", index=False)
     print(f"  termination_summary.csv saved ({len(summary)} rows)")
@@ -772,9 +813,7 @@ def plot_termination_heatmap(data: list[RunData], output_dir: Path, last_n: int 
         std_matrix = np.zeros((n_critic, n_reason), dtype=float)
         for i, critic in enumerate(CRITICS):
             for j, (key, _label) in enumerate(reasons):
-                row = summary[(summary["arena"] == arena)
-                              & (summary["critic"] == critic)
-                              & (summary["reason"] == key)]
+                row = summary[(summary["arena"] == arena) & (summary["critic"] == critic) & (summary["reason"] == key)]
                 if row.empty:
                     continue
                 mean_matrix[i, j] = row["mean"].iloc[0]
@@ -792,8 +831,7 @@ def plot_termination_heatmap(data: list[RunData], output_dir: Path, last_n: int 
                     txt = f"{m*100:.0f}%\n±{s*100:.0f}%" if seed_count > 1 else f"{m*100:.0f}%"
                 # White text on dark cells (low values are dark in viridis)
                 colour = "white" if (np.isnan(m) or m < 0.55) else "black"
-                ax.text(j, i, txt, ha="center", va="center",
-                        fontsize=9, color=colour)
+                ax.text(j, i, txt, ha="center", va="center", fontsize=9, color=colour)
         ax.set_xticks(range(n_reason))
         ax.set_xticklabels([lbl for _, lbl in reasons])
         ax.set_yticks(range(n_critic))
@@ -825,7 +863,9 @@ def _iqm_summary(values: np.ndarray) -> tuple[float, float, float, int, int]:
 
 
 def plot_win_rate_bars(
-    win_df: pd.DataFrame, output_dir: Path, aggregation: str = "mean_std",
+    win_df: pd.DataFrame,
+    output_dir: Path,
+    aggregation: str = "mean_std",
 ) -> None:
     if win_df.empty:
         print("[WARN] no win-rate data; skipping bar plot")
@@ -843,15 +883,12 @@ def plot_win_rate_bars(
                 k = min(3, v.size)
                 kept = v[-k:]
                 m, lo, hi, n, n_kept = float(kept.mean()), float(kept.min()), float(kept.max()), v.size, int(k)
-            rows.append({"critic": critic, "arena": arena, "mean": m,
-                         "lower": lo, "upper": hi, "count": n, "n_kept": n_kept})
+            rows.append(
+                {"critic": critic, "arena": arena, "mean": m, "lower": lo, "upper": hi, "count": n, "n_kept": n_kept}
+            )
         summary = pd.DataFrame(rows)
     else:
-        summary = (
-            win_df.groupby(["critic", "arena"])["win_rate"]
-            .agg(["mean", "std", "count"])
-            .reset_index()
-        )
+        summary = win_df.groupby(["critic", "arena"])["win_rate"].agg(["mean", "std", "count"]).reset_index()
     summary.to_csv(output_dir / "win_rate_summary.csv", index=False)
     print(f"  win_rate_summary.csv saved ({len(summary)} rows)")
 
@@ -864,16 +901,21 @@ def plot_win_rate_bars(
         if aggregation in ("iqm_range", "top3_range"):
             lo = np.array([sub.loc[c, "lower"] if c in sub.index else 0.0 for c in CRITICS])
             hi = np.array([sub.loc[c, "upper"] if c in sub.index else 0.0 for c in CRITICS])
-            yerr = np.vstack([np.maximum(0.0, means - lo),
-                              np.maximum(0.0, hi - means)])
+            yerr = np.vstack([np.maximum(0.0, means - lo), np.maximum(0.0, hi - means)])
         else:
             stds = np.array([sub.loc[c, "std"] if c in sub.index else 0.0 for c in CRITICS])
             yerr = stds
         offset = (-0.5 + i) * width
         ax.bar(
-            x + offset, np.nan_to_num(means), width,
-            yerr=yerr, capsize=4, label=arena.capitalize(),
-            color=ARENA_COLORS[arena], edgecolor="black", linewidth=0.5,
+            x + offset,
+            np.nan_to_num(means),
+            width,
+            yerr=yerr,
+            capsize=4,
+            label=arena.capitalize(),
+            color=ARENA_COLORS[arena],
+            edgecolor="black",
+            linewidth=0.5,
         )
 
     ax.set_xticks(x)
@@ -901,6 +943,7 @@ def tag_runs(entity: str, project: str) -> None:
     filter by ``arena`` natively.
     """
     import wandb
+
     api = wandb.Api()
     n_updated = 0
     for run in api.runs(f"{entity}/{project}"):
@@ -923,6 +966,7 @@ def upload_figures(output_dir: Path, entity: str, project: str) -> None:
     the generated PDFs + PNGs + win_rate_summary.csv as artifacts.
     """
     import wandb
+
     figures = [
         "reward_evolution",
         "termination_wall",
@@ -930,8 +974,12 @@ def upload_figures(output_dir: Path, entity: str, project: str) -> None:
         "win_rate",
     ]
     run = wandb.init(
-        entity=entity, project=project, name="ablation_summary",
-        job_type="summary", reinit=True, settings=wandb.Settings(silent=True),
+        entity=entity,
+        project=project,
+        name="ablation_summary",
+        job_type="summary",
+        reinit=True,
+        settings=wandb.Settings(silent=True),
     )
     images = {}
     for fig in figures:
@@ -960,68 +1008,125 @@ def upload_figures(output_dir: Path, entity: str, project: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--entity", required=True, help="wandb entity (username or team)")
+    parser.add_argument(
+        "--entity",
+        default=None,
+        help=(
+            "wandb entity (username or team). Required unless --cache points at an "
+            "existing pickle, in which case no wandb access is needed."
+        ),
+    )
     parser.add_argument("--project", default="critic_ablation", help="wandb project name")
     parser.add_argument("--output-dir", default="figures/ablation", help="where to save figures")
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help=(
+            "Reproduce the paper's Figures 3 and 4 exactly: IQM aggregation, "
+            "V(o) excluded, 100K environment timesteps, and the per-critic "
+            "per-arena seed grid in PAPER_GRID. Overrides --aggregation, "
+            "--exclude-critics, --env-timesteps and the --seeds* filters."
+        ),
+    )
     parser.add_argument("--cache", default=None, help="pickle path to cache fetched runs")
     parser.add_argument("--samples", type=int, default=500, help="wandb history sample count per run")
     parser.add_argument(
-        "--env-timesteps", type=int, default=100_000,
-        help="Environment timesteps per run (TOTAL_FRAMES / NUM_ENVS). "
-             "Used to rescale wandb's internal _step axis to a physical quantity.",
+        "--env-timesteps",
+        type=int,
+        default=100_000,
+        help=(
+            "Environment timesteps per run (TOTAL_FRAMES / NUM_ENVS). "
+            "Used to rescale wandb's internal _step axis to a physical quantity."
+        ),
     )
     parser.add_argument(
-        "--tag-runs", action="store_true",
-        help="Set wandb tags + config fields (critic, arena, seed) on each "
-             "ablation run so you can group/filter by critic in the wandb UI.",
+        "--tag-runs",
+        action="store_true",
+        help=(
+            "Set wandb tags + config fields (critic, arena, seed) on each "
+            "ablation run so you can group/filter by critic in the wandb UI."
+        ),
     )
     parser.add_argument(
-        "--upload-figures", action="store_true",
-        help="Upload generated figures (reward_evolution, termination_wall, "
-             "reward_components, win_rate) to a wandb run called "
-             "'ablation_summary' for browsing alongside the per-run data.",
+        "--upload-figures",
+        action="store_true",
+        help=(
+            "Upload generated figures (reward_evolution, termination_wall, "
+            "reward_components, win_rate) to a wandb run called "
+            "'ablation_summary' for browsing alongside the per-run data."
+        ),
     )
     parser.add_argument(
-        "--require-reward-approach", type=float, default=None,
-        help="Only include runs whose Config/reward_approach matches this "
-             "value (e.g. 3.0 for the v7 exponential sweep). Stale runs from "
-             "earlier reward variants are dropped from the plots.",
+        "--require-reward-approach",
+        type=float,
+        default=None,
+        help=(
+            "Only include runs whose Config/reward_approach matches this "
+            "value (e.g. 3.0 for the v7 exponential sweep). Stale runs from "
+            "earlier reward variants are dropped from the plots."
+        ),
     )
     parser.add_argument(
-        "--require-reward-approach-decay", type=float, default=None,
-        help="Only include runs whose Config/reward_approach_decay matches "
-             "this value (e.g. 0.5 for the v7 exponential sweep).",
+        "--require-reward-approach-decay",
+        type=float,
+        default=None,
+        help=(
+            "Only include runs whose Config/reward_approach_decay matches "
+            "this value (e.g. 0.5 for the v7 exponential sweep)."
+        ),
     )
     parser.add_argument(
-        "--require-reward-time-scale", type=float, default=None,
-        help="Only include runs whose Config/reward_time_scale matches this "
-             "value (e.g. 1.0 for the v8 decoupled-time sweep). v7 and earlier "
-             "runs have no such config and will be dropped.",
+        "--require-reward-time-scale",
+        type=float,
+        default=None,
+        help=(
+            "Only include runs whose Config/reward_time_scale matches this "
+            "value (e.g. 1.0 for the v8 decoupled-time sweep). v7 and earlier "
+            "runs have no such config and will be dropped."
+        ),
     )
     parser.add_argument(
-        "--seeds", type=str, default=None,
-        help="Comma-separated list of seeds to keep (e.g. '42' or '42,123'). "
-             "Default: keep all seeds present in the project. Captions adapt "
-             "to single-seed mode automatically.",
+        "--seeds",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated list of seeds to keep (e.g. '42' or '42,123'). "
+            "Default: keep all seeds present in the project. Captions adapt "
+            "to single-seed mode automatically."
+        ),
     )
     parser.add_argument(
-        "--seeds-open", type=str, default=None,
-        help="Per-arena override: comma-separated seeds to keep for the open "
-             "arena only. Takes precedence over --seeds for open runs.",
+        "--seeds-open",
+        type=str,
+        default=None,
+        help=(
+            "Per-arena override: comma-separated seeds to keep for the open "
+            "arena only. Takes precedence over --seeds for open runs."
+        ),
     )
     parser.add_argument(
-        "--seeds-wall", type=str, default=None,
-        help="Per-arena override: comma-separated seeds to keep for the wall "
-             "arena only. Takes precedence over --seeds for wall runs.",
+        "--seeds-wall",
+        type=str,
+        default=None,
+        help=(
+            "Per-arena override: comma-separated seeds to keep for the wall "
+            "arena only. Takes precedence over --seeds for wall runs."
+        ),
     )
     parser.add_argument(
-        "--exclude-critics", type=str, default="",
-        help="Comma-separated critics to drop from the plot (e.g. 'Vsoa,Vo'). "
-             "Useful for in-progress runs where some critics don't yet have "
-             "enough seeds to aggregate cleanly.",
+        "--exclude-critics",
+        type=str,
+        default="",
+        help=(
+            "Comma-separated critics to drop from the plot (e.g. 'Vsoa,Vo'). "
+            "Useful for in-progress runs where some critics don't yet have "
+            "enough seeds to aggregate cleanly."
+        ),
     )
     parser.add_argument(
-        "--aggregation", choices=["mean_std", "iqm_range", "top3_range"], default="mean_std",
+        "--aggregation",
+        choices=["mean_std", "iqm_range", "top3_range"],
+        default="mean_std",
         help=(
             "Per-cell aggregation across seeds. "
             "'mean_std' (default) plots sample mean ± 1 std. "
@@ -1034,6 +1139,21 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    if args.paper:
+        args.aggregation = "iqm_range"
+        args.exclude_critics = "Vo"
+        args.env_timesteps = 100_000
+        args.seeds = args.seeds_open = args.seeds_wall = None
+        print("--paper: IQM aggregation, V(o) excluded, 100K env timesteps, seeds pinned to PAPER_GRID.")
+
+    cache_hit = bool(args.cache) and Path(args.cache).exists()
+    if not cache_hit and not args.entity:
+        parser.error(
+            "--entity is required when fetching from wandb. "
+            "Pass --cache <runs.pkl> to regenerate the figures offline instead; "
+            "the pickle shipped at figures/paper/runs.pkl holds every plotted series."
+        )
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1054,7 +1174,8 @@ def main() -> None:
     else:
         print(f"Fetching runs from {args.entity}/{args.project}...")
         data = fetch_runs(
-            args.entity, args.project,
+            args.entity,
+            args.project,
             num_samples=args.samples,
             require_config=require_config,
         )
@@ -1072,8 +1193,7 @@ def main() -> None:
         data = [rd for rd in data if rd.critic not in excluded]
         global CRITICS
         CRITICS = [c for c in CRITICS if c not in excluded]
-        print(f"Exclude-critics {sorted(excluded)}: kept {len(data)}/{before} runs, "
-              f"plotting {CRITICS}.")
+        print(f"Exclude-critics {sorted(excluded)}: kept {len(data)}/{before} runs, plotting {CRITICS}.")
 
     if args.seeds is not None:
         wanted_seeds = {int(s.strip()) for s in args.seeds.split(",") if s.strip()}
@@ -1096,25 +1216,36 @@ def main() -> None:
                 continue
             kept.append(rd)
         data = kept
-        print(f"Per-arena seed filter (open={seeds_open}, wall={seeds_wall}): "
-              f"kept {len(data)}/{before} runs.")
+        print(f"Per-arena seed filter (open={seeds_open}, wall={seeds_wall}): kept {len(data)}/{before} runs.")
         if not data:
             raise SystemExit(f"No runs match --seeds={args.seeds}.")
 
-    print(f"Aggregating {len(data)} runs across "
-          f"{len({(r.critic, r.arena) for r in data})} cells and "
-          f"{len({r.seed for r in data})} seeds.")
+    if args.paper:
+        before = len(data)
+        data = [rd for rd in data if rd.seed in PAPER_GRID.get((rd.critic, rd.arena), set())]
+        print(f"--paper seed grid: kept {len(data)}/{before} runs.")
+        missing = {
+            cell: sorted(seeds - {rd.seed for rd in data if (rd.critic, rd.arena) == cell})
+            for cell, seeds in PAPER_GRID.items()
+        }
+        missing = {k: v for k, v in missing.items() if v}
+        if missing:
+            print("  WARNING: missing runs for", {f"{c}/{a}": v for (c, a), v in missing.items()})
+
+    print(
+        f"Aggregating {len(data)} runs across "
+        f"{len({(r.critic, r.arena) for r in data})} cells and "
+        f"{len({r.seed for r in data})} seeds."
+    )
 
     print(f"Aggregation mode: {args.aggregation}")
 
     print("Plotting reward evolution...")
-    plot_reward_evolution(data, output_dir, env_timesteps=args.env_timesteps,
-                          aggregation=args.aggregation)
+    plot_reward_evolution(data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation)
     print("  reward_evolution.{pdf,png} saved")
 
     print("Plotting capture-rate evolution...")
-    plot_capture_rate_evolution(data, output_dir, env_timesteps=args.env_timesteps,
-                                aggregation=args.aggregation)
+    plot_capture_rate_evolution(data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation)
     print("  capture_rate_evolution.{pdf,png} saved")
 
     print("Plotting termination heatmap...")
@@ -1122,22 +1253,30 @@ def main() -> None:
     print("  termination_heatmap.{pdf,png} saved")
 
     print("Plotting wall-arena terminations...")
-    plot_terminations_wall(data, output_dir, env_timesteps=args.env_timesteps,
-                           aggregation=args.aggregation)
+    plot_terminations_wall(data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation)
     print("  termination_wall.{pdf,png} saved")
 
-    print("Plotting reward-component magnitudes...")
-    plot_reward_component_magnitudes(data, output_dir, entity=args.entity, project=args.project)
-    print("  reward_components.{pdf,png} saved")
+    # These two read per-run *summary* fields that the history cache does not
+    # carry, so they need live wandb access. Figures 3 and 4 of the paper do
+    # not depend on them; skip rather than fail an offline regeneration.
+    if args.entity:
+        print("Plotting reward-component magnitudes...")
+        plot_reward_component_magnitudes(data, output_dir, entity=args.entity, project=args.project)
+        print("  reward_components.{pdf,png} saved")
+    else:
+        print("Skipping reward-component magnitudes (needs wandb; pass --entity).")
 
     print("Computing win rates...")
     win_df = compute_final_win_rates(data)
     plot_win_rate_bars(win_df, output_dir, aggregation=args.aggregation)
     print(f"  win_rate.{{pdf,png}} saved")
 
-    print("Plotting per-heuristic capture rates...")
-    plot_per_heuristic_capture(data, output_dir, entity=args.entity, project=args.project)
-    print("  per_heuristic_win_rate.{pdf,png} saved (if data was present)")
+    if args.entity:
+        print("Plotting per-heuristic capture rates...")
+        plot_per_heuristic_capture(data, output_dir, entity=args.entity, project=args.project)
+        print("  per_heuristic_win_rate.{pdf,png} saved (if data was present)")
+    else:
+        print("Skipping per-heuristic capture rates (needs wandb; pass --entity).")
 
     print(f"\nAll figures written to {output_dir}/")
 

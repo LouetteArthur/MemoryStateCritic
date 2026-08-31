@@ -7,7 +7,12 @@ pool of heuristics) in which asymmetric critics are compared.
 
 This is a curated single-agent slice of a larger research codebase: only the env, the
 critic variants, and the ablation/plotting scripts needed to regenerate the paper's
-figures are kept (no self-play, AMSPB, league, MARL, or deployment code).
+figures are kept. The self-play league, the multi-agent environments, the Elo tournament
+and the Crazyswarm flight scripts live in the parent codebase and are not shipped here.
+Two subsystems do remain because the paper's code path imports them: `deployment/`, which
+loads a policy from a checkpoint (used by `controllers/` to drive a frozen opponent), and
+some staged-training (AMSPB) plumbing in the environment config. No experiment in the
+paper uses the latter.
 
 ## What's here
 
@@ -48,6 +53,18 @@ Requirements: Ubuntu 22.04/24.04, NVIDIA GPU (driver >= 535, CUDA 12.x), Git LFS
 already have an Isaac Lab checkout, symlink it to `./IsaacLab` before `install.sh` to skip
 the clone.
 
+> **Use the dedicated `.venv`.** If you instead reuse an existing environment that already
+> has another copy of `isaac_pursuit_evasion` installed in editable mode, `import
+> isaac_pursuit_evasion` — which carries the environment and the task registration —
+> silently resolves to *that* checkout, not to this one, and you will train against the
+> wrong code. `install.sh` avoids this. To reuse an environment anyway, put this
+> repository's package directory first on the path:
+>
+> ```bash
+> export PYTHONPATH="$PWD/source/isaac_pursuit_evasion:$PWD:$PWD/source/third_parties/skrl"
+> python -c "import isaac_pursuit_evasion as m; print(m.__file__)"   # must print this repo
+> ```
+
 ## Reproduce the experiment
 
 ```bash
@@ -79,3 +96,32 @@ OMNI_KIT_ACCEPT_EULA=YES python scripts/skrl/train.py \
 - Compute: 5 critics x 2 arenas x 5 seeds ~ 50 runs of ~1e8 frames each; budget accordingly.
 - Pin the stack: Isaac Sim 5.1.0.0, Isaac Lab @ the commit in `install.sh`, vendored skrl
   in `source/third_parties/skrl`. `requirements-freeze.txt` records the exact Python deps.
+
+---
+
+## Citation
+
+```bibtex
+@inproceedings{memorystatecritic2026,
+  title     = {Memory-State Critic for Asymmetric Actor-Critic with
+               Application to Vision-Based Pursuit-Evasion},
+  author    = {Louette, Arthur and S{\'a}nchez Roncero, Alejandro and
+               Lambrechts, Gaspard and Leroy, Pascal and Hansen, Julien and
+               {\"O}gren, Petter and Ernst, Damien},
+  booktitle = {European Workshop on Reinforcement Learning (EWRL)},
+  year      = {2026}
+}
+```
+
+Machine-readable metadata: [CITATION.cff](CITATION.cff).
+
+## License
+
+[BSD 3-Clause](LICENSE). Third-party components are listed in [NOTICE](NOTICE);
+in particular this repository vendors a **modified** copy of
+[skrl](https://github.com/Toni-SM/skrl) 1.4.3 (MIT) under `source/third_parties/`.
+
+## Acknowledgements
+
+Claude (Anthropic) assisted with parts of the code, under the authors' direction
+and review. The research contribution and the reported results are the authors'.

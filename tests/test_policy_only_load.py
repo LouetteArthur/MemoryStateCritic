@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Unit tests for the policy-only checkpoint loader (`--checkpoint-policy-only`).
 
 The loader exists to warm-start AMSPB agents from Experiment-1 checkpoints
@@ -53,6 +58,7 @@ def load_policy_only():
     src = _extract_function_source(_TRAIN_PATH, "_load_policy_only_from_checkpoint")
     namespace: dict = {"torch": torch}
     from collections.abc import Mapping
+
     namespace["Mapping"] = Mapping
     namespace["Any"] = object  # only used in type hints
     exec(src, namespace)
@@ -136,10 +142,12 @@ def test_load_policy_only_tolerates_architecture_diff(tmp_path, load_policy_only
     """When the source actor has an extra parameter the target doesn't
     have (or vice versa), strict=False load logs missing / unexpected and
     proceeds — does NOT raise."""
+
     class _SourceActorWithExtra(_Actor):
         def __init__(self, in_dim=8, out_dim=4):
             super().__init__(in_dim, out_dim)
             self.extra_head = nn.Linear(out_dim, 2)
+
     source_actor = _SourceActorWithExtra()
     payload = _build_payload(source_actor.state_dict())
     path = tmp_path / "extra.pt"
@@ -169,17 +177,20 @@ def test_load_policy_only_does_not_touch_value(tmp_path, load_policy_only):
 
 
 def test_load_policy_only_loads_state_preprocessor_if_both_sides_have_one(
-    tmp_path, load_policy_only,
+    tmp_path,
+    load_policy_only,
 ):
     """Optional: if the checkpoint AND the agent both expose a
     state_preprocessor, the loader transfers its state too (so the actor
     sees the same observation normalisation as during pretrain)."""
     source_actor = _Actor()
+
     # Stand-in preprocessor — anything with load_state_dict / state_dict
     class _Preproc(nn.Module):
         def __init__(self):
             super().__init__()
             self.scale = nn.Parameter(torch.ones(8))
+
     src_pre = _Preproc()
     with torch.no_grad():
         src_pre.scale.fill_(2.5)

@@ -1,8 +1,13 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for AMSPB stage resolution and env-var plumbing.
 
 Covers the new mechanism where _amspb_vision_cfg(stage=None) reads the
 stage from the AMSPB_STAGE env var and the checkpoint map from
-AMSPB_CHECKPOINTS.  These are the seams between scripts/train_amspb.py
+AMSPB_CHECKPOINTS.  These are the seams between the staged-training driver
 and the env config factory.
 """
 
@@ -110,6 +115,7 @@ def test_previous_stage_key_zero_or_negative_returns_none(cfg_mod):
 # ---------------------------------------------------------------------------
 # _amspb_vision_cfg env-var stage resolution
 # ---------------------------------------------------------------------------
+
 
 def test_amspb_vision_cfg_reads_stage_from_env_var(cfg_mod, restore_env):
     """When stage=None, the factory must use AMSPB_STAGE."""

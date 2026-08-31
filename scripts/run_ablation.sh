@@ -26,8 +26,8 @@ set -euo pipefail
 
 # Defaults
 SEEDS="${SEEDS:-42}"
-NUM_ENVS="${NUM_ENVS:-1024}"
-TOTAL_FRAMES="${TOTAL_FRAMES:-102400000}"   # 400K timesteps × 256 envs
+NUM_ENVS="${NUM_ENVS:-512}"
+TOTAL_FRAMES="${TOTAL_FRAMES:-51200000}"    # 100K timesteps × 512 envs = 5.12e7 (réglage du papier)
 PER_RUN_TIMEOUT="${PER_RUN_TIMEOUT:-32400}" # 9 h per run; PXR/USD races hang Isaac Sim periodically
 TASK="Ablation-vision-vs-trajectories"
 WANDB_PROJECT="${WANDB_PROJECT:-critic_ablation}"
@@ -103,6 +103,15 @@ TRAIN_SCRIPT="$SCRIPT_DIR/skrl/train.py"
 count=0
 total=0
 
+# Abort the sweep if runs start failing *fast* and keep failing. On 2026-08-29 a transient
+# fault made every launch die during Isaac Sim startup; because the loop only warned and moved
+# on, it burned 21 of the remaining grid cells in 107 minutes and left the GPU idle for two
+# days. A run that exits well under MIN_RUN_SECONDS did not train, whatever its exit code, so
+# consecutive fast failures mean the machine is broken, not the grid.
+MIN_RUN_SECONDS="${MIN_RUN_SECONDS:-600}"
+MAX_CONSECUTIVE_FAST_FAILURES="${MAX_CONSECUTIVE_FAST_FAILURES:-3}"
+consecutive_fast_failures=0
+
 for seed in $SEEDS; do
     for critic_spec in "${CRITICS[@]}"; do
         IFS='|' read -r label entry_point critic_flags <<< "$critic_spec"
@@ -161,11 +170,27 @@ for seed in $SEEDS; do
                 # Fall back to plain eval if `timeout` isn't available (minimal
                 # containers without coreutils).
                 rc=0
+                run_started=$SECONDS
                 if command -v timeout >/dev/null 2>&1; then
                     timeout --kill-after=60 "$PER_RUN_TIMEOUT" bash -c "$CMD" || rc=$?
                 else
                     echo "[WARN] 'timeout' not found in PATH; running without watchdog"
                     eval "$CMD" || rc=$?
+                fi
+                run_seconds=$((SECONDS - run_started))
+                if [ "$rc" -ne 0 ] && [ "$run_seconds" -lt "$MIN_RUN_SECONDS" ]; then
+                    consecutive_fast_failures=$((consecutive_fast_failures + 1))
+                    echo "[WARN] $NAME failed after only ${run_seconds}s (rc=$rc) — fast failure ${consecutive_fast_failures}/${MAX_CONSECUTIVE_FAST_FAILURES}"
+                    if [ "$consecutive_fast_failures" -ge "$MAX_CONSECUTIVE_FAST_FAILURES" ]; then
+                        echo ""
+                        echo "=== ABORTING SWEEP ==="
+                        echo "$consecutive_fast_failures consecutive runs died in under ${MIN_RUN_SECONDS}s."
+                        echo "That is a broken machine, not a broken grid. Fix the host, then rerun:"
+                        echo "  the completion markers in $DONE_DIR mean finished cells are skipped."
+                        exit 1
+                    fi
+                else
+                    consecutive_fast_failures=0
                 fi
                 if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
                     echo "[WARN] $NAME timed out after ${PER_RUN_TIMEOUT}s — moving on"

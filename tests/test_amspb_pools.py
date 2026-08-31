@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Tests for the AMSPB pool builders.
 
 The pool builders generate ControllerSpec lists that the env consumes to
@@ -53,7 +58,11 @@ def test_pursuer_pool_stage1_has_frpn_and_pretrain_only(cfg_mod):
     """Stage 1: opponents are FRPN baseline + pretrained pursuer (no checkpoint chain yet)."""
     ckpts = _make_checkpoint_map()
     specs = cfg_mod._amspb_pursuer_pool(
-        stage_index=1, rl_kind="rl_bodyrates", num_envs=256, baseline_prob=0.5, checkpoints=ckpts,
+        stage_index=1,
+        rl_kind="rl_bodyrates",
+        num_envs=256,
+        baseline_prob=0.5,
+        checkpoints=ckpts,
     )
     names = [s.name for s in specs]
     assert "frpn_pursuer" in names
@@ -68,7 +77,11 @@ def test_pursuer_pool_stage2_includes_stage1_checkpoint(cfg_mod):
     """Stage 2: FRPN (bp/2) + pretrain (bp/2) + stage1 latest (1 - bp)."""
     ckpts = _make_checkpoint_map()
     specs = cfg_mod._amspb_pursuer_pool(
-        stage_index=2, rl_kind="rl_bodyrates", num_envs=256, baseline_prob=0.6, checkpoints=ckpts,
+        stage_index=2,
+        rl_kind="rl_bodyrates",
+        num_envs=256,
+        baseline_prob=0.6,
+        checkpoints=ckpts,
     )
     names = [s.name for s in specs]
     assert "rl_bodyrates_pursuer_stage1" in names
@@ -87,7 +100,11 @@ def test_pursuer_pool_stage3_uses_stage2_latest(cfg_mod):
     """Stage 3 must point at the stage-2 checkpoint (not stage-1)."""
     ckpts = _make_checkpoint_map()
     specs = cfg_mod._amspb_pursuer_pool(
-        stage_index=3, rl_kind="rl_bodyrates", num_envs=256, baseline_prob=0.5, checkpoints=ckpts,
+        stage_index=3,
+        rl_kind="rl_bodyrates",
+        num_envs=256,
+        baseline_prob=0.5,
+        checkpoints=ckpts,
     )
     names = [s.name for s in specs]
     assert "rl_bodyrates_pursuer_stage2" in names
@@ -100,8 +117,11 @@ def test_pursuer_pool_stage_n_missing_checkpoint_raises(cfg_mod):
     incomplete.pop("pursuer_rl_bodyrates_stage1")
     with pytest.raises(ValueError, match="Missing AMSPB checkpoint"):
         cfg_mod._amspb_pursuer_pool(
-            stage_index=2, rl_kind="rl_bodyrates", num_envs=256,
-            baseline_prob=0.5, checkpoints=incomplete,
+            stage_index=2,
+            rl_kind="rl_bodyrates",
+            num_envs=256,
+            baseline_prob=0.5,
+            checkpoints=incomplete,
         )
 
 
@@ -109,7 +129,10 @@ def test_pursuer_pool_kind_propagates_to_specs(cfg_mod):
     """RL-spec entries should carry kind=rl_kind so the env knows which controller to instantiate."""
     ckpts = _make_checkpoint_map()
     specs = cfg_mod._amspb_pursuer_pool(
-        stage_index=2, rl_kind="rl_velocity", num_envs=128, baseline_prob=0.4,
+        stage_index=2,
+        rl_kind="rl_velocity",
+        num_envs=128,
+        baseline_prob=0.4,
         checkpoints={k.replace("rl_bodyrates", "rl_velocity"): v for k, v in ckpts.items()},
     )
     rl_specs = [s for s in specs if s.name.startswith("rl_velocity")]
@@ -127,8 +150,11 @@ def test_evader_pool_stage1_uses_stage1_checkpoint(cfg_mod):
     """When training pursuer at stage 1, the evader pool needs evader_{rl}_stage1."""
     ckpts = _make_checkpoint_map()
     specs = cfg_mod._amspb_evader_pool(
-        stage_index=1, rl_kind="rl_bodyrates", num_envs=256,
-        baseline_prob=0.6, checkpoints=ckpts,
+        stage_index=1,
+        rl_kind="rl_bodyrates",
+        num_envs=256,
+        baseline_prob=0.6,
+        checkpoints=ckpts,
     )
     names = [s.name for s in specs]
     assert "rl_bodyrates_evader_stage1" in names
@@ -142,8 +168,11 @@ def test_evader_pool_stage_n_uses_stage_n_checkpoint(cfg_mod):
     ckpts = _make_checkpoint_map()
     for stage in (1, 2, 3):
         specs = cfg_mod._amspb_evader_pool(
-            stage_index=stage, rl_kind="rl_bodyrates", num_envs=256,
-            baseline_prob=0.5, checkpoints=ckpts,
+            stage_index=stage,
+            rl_kind="rl_bodyrates",
+            num_envs=256,
+            baseline_prob=0.5,
+            checkpoints=ckpts,
         )
         expected = f"rl_bodyrates_evader_stage{stage}"
         names = [s.name for s in specs]
@@ -154,8 +183,11 @@ def test_evader_pool_baseline_prob_zero_skips_trajectories(cfg_mod):
     """With baseline_prob=0 there are no trajectory controllers, only the latest RL evader."""
     ckpts = _make_checkpoint_map()
     specs = cfg_mod._amspb_evader_pool(
-        stage_index=1, rl_kind="rl_bodyrates", num_envs=256,
-        baseline_prob=0.0, checkpoints=ckpts,
+        stage_index=1,
+        rl_kind="rl_bodyrates",
+        num_envs=256,
+        baseline_prob=0.0,
+        checkpoints=ckpts,
     )
     names = [s.name for s in specs]
     assert "hover" not in names and "circular" not in names and "lemniscate" not in names

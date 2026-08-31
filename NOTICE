@@ -1,0 +1,37 @@
+# Third-party code and assets
+
+IsaacPursuitEvasion is distributed under the BSD 3-Clause License (see LICENSE).
+It incorporates or depends on the following third-party work.
+
+## Isaac Lab (BSD 3-Clause)
+
+Copyright (c) 2022-2025, The Isaac Lab Project Developers.
+https://github.com/isaac-sim/IsaacLab
+
+`source/isaac_pursuit_evasion/` began as the Isaac Lab external-extension
+template; `setup.py`, `pyproject.toml`, `config/extension.toml`, `.flake8` and
+`.pre-commit-config.yaml` derive from it. The environment subclasses Isaac Lab's
+`DirectRLEnv`.
+
+## skrl v1.4.3 (MIT) — vendored and modified
+
+Copyright (c) 2020-2025, Toni-SM.
+https://github.com/Toni-SM/skrl
+
+A modified copy is vendored at `source/third_parties/skrl/`, with its original
+LICENSE intact. See `source/third_parties/skrl/FORK_NOTES.md` for what was
+changed and `skrl_1.4.3.patch` for the exact delta.
+
+## Crazyflie 2.x USD asset (NVIDIA Omniverse)
+
+The `crazyflie` platform loads
+`{ISAAC_NUCLEUS_DIR}/Robots/Bitcraze/Crazyflie/cf2x.usd` at runtime from
+NVIDIA's Nucleus server. It is not redistributed here and is governed by the
+NVIDIA Omniverse licence terms.
+
+## Crazyflie Brushless USD assets
+
+`source/isaac_pursuit_evasion/assets/Crazyflie/*.usd` are derived from the
+Bitcraze Crazyflie 2.x model above, re-authored for this project with distinct
+pursuer/evader materials so the two drones are separable in the segmentation
+mask.
