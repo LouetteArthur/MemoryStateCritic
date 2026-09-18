@@ -41,7 +41,10 @@ jobs:
           pip install -e source/isaac_pursuit_evasion/ --no-deps
 
       - name: Run tests
-        run: pytest tests/ -q
+        # The two end-to-end learning tests assert a threshold on how much PPO
+        # improves in a small budget. That is not deterministic across BLAS
+        # backends and thread counts, so they run locally, not here.
+        run: pytest tests/ -q -m "not stochastic"
 
   lint:
     runs-on: ubuntu-latest

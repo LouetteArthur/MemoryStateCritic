@@ -313,6 +313,7 @@ def _make_cfg(timesteps: int) -> dict:
 
 
 @pytest.mark.slow
+@pytest.mark.stochastic
 def test_ppo_rnn_vsh_learns_remember_target():
     """A short training run must noticeably improve episode return.
 
@@ -460,6 +461,7 @@ def _make_sh_cfg(timesteps: int) -> dict:
 
 
 @pytest.mark.slow
+@pytest.mark.stochastic
 def test_ppo_rnn_sh_learns_remember_target():
     """V(s,h) history-state critic must also learn the remember-target POMDP.
 

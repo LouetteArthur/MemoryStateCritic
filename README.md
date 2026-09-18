@@ -141,9 +141,15 @@ plumbing remain because the paper's import path reaches them; no experiment uses
 ## Development
 
 ```bash
-pytest tests/              # 77 tests, ~4 min, no Isaac Sim (conftest.py stubs it)
-pre-commit run --all-files # black, isort, flake8, pyupgrade, codespell
+pytest tests/                       # all 77, ~4 min, no Isaac Sim (conftest.py stubs it)
+pytest tests/ -m "not stochastic"   # the 75 deterministic ones, ~7 s — what CI runs
+pre-commit run --all-files          # black, isort, flake8, pyupgrade, codespell
 ```
+
+Two tests train PPO end to end on a toy POMDP and assert a threshold on how much it
+improves. They are worth running — they catch a broken BPTT or dead gradients — but the
+outcome depends on the BLAS backend and thread count, so they are marked `stochastic` and
+excluded from CI rather than left to fail there intermittently.
 
 ## Citation
 
