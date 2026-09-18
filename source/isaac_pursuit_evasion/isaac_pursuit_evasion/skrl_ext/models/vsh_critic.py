@@ -73,14 +73,29 @@ class VshCriticModel(DeterministicMixin, Model):
         if z_theta is None:
             z_theta = inputs.get("actor_hidden")
 
-        # Fallback: if no z_theta provided (e.g. during initial eval), use zeros
+        # Fallback: if no z_theta provided, use zeros. This exists ONLY for the
+        # dummy forward pass skrl runs inside Model.init_state_dict() before any
+        # rollout has happened. Leaving it armed during training is dangerous:
+        # the critic silently degrades to V(s) with self._z_dim dead inputs, and
+        # nothing downstream -- not the run name, not the logs -- would say so.
+        # _allow_zero_fallback is cleared by the first real forward (see below).
         if z_theta is None:
+            if not getattr(self, "_allow_zero_fallback", True):
+                raise RuntimeError(
+                    f"{type(self).__name__} received no 'z_theta' (nor legacy 'actor_hidden') "
+                    "after initialisation. The memory-state critic would silently become a "
+                    "state-only critic with zeroed memory inputs. Check that the agent config "
+                    "sets sz_critic: True and that the rollout stores the actor hidden state."
+                )
             z_theta = torch.zeros(
                 *states.shape[:-1],
                 self._z_dim,
                 device=states.device,
                 dtype=states.dtype,
             )
+        else:
+            # A real memory vector arrived: from here on, a missing z_theta is a bug.
+            self._allow_zero_fallback = False
 
         parts = [states, z_theta]
 

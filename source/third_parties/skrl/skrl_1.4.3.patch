@@ -1,0 +1,1005 @@
+diff -ruN skrl_a/skrl/agents/torch/ppo/ppo.py skrl_b/skrl/agents/torch/ppo/ppo.py
+--- skrl_a/skrl/agents/torch/ppo/ppo.py	2026-09-18 09:06:11.580305572 +0200
++++ skrl_b/skrl/agents/torch/ppo/ppo.py	2026-09-18 09:06:11.603034153 +0200
+@@ -1,21 +1,19 @@
+-from typing import Any, Mapping, Optional, Tuple, Union
+-
+ import copy
+ import itertools
+-import gymnasium
+-from packaging import version
++from typing import Any, Optional, Tuple, Union
++from collections.abc import Mapping
+ 
++import gymnasium
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-
++from packaging import version
+ from skrl import config, logger
+ from skrl.agents.torch import Agent
+ from skrl.memories.torch import Memory
+ from skrl.models.torch import Model
+ from skrl.resources.schedulers.torch import KLAdaptiveLR
+ 
+-
+ # fmt: off
+ # [start-config-dict-torch]
+ PPO_DEFAULT_CONFIG = {
+@@ -32,6 +30,8 @@
+ 
+     "state_preprocessor": None,             # state preprocessor class (see skrl.resources.preprocessors)
+     "state_preprocessor_kwargs": {},        # state preprocessor's kwargs (e.g. {"size": env.observation_space})
++    "critic_state_preprocessor": None,      # separate preprocessor for critic states (asymmetric actor-critic)
++    "critic_state_preprocessor_kwargs": {}, # critic state preprocessor's kwargs (e.g. {"size": env.state_space})
+     "value_preprocessor": None,             # value preprocessor class (see skrl.resources.preprocessors)
+     "value_preprocessor_kwargs": {},        # value preprocessor's kwargs (e.g. {"size": 1})
+ 
+@@ -73,11 +73,11 @@
+     def __init__(
+         self,
+         models: Mapping[str, Model],
+-        memory: Optional[Union[Memory, Tuple[Memory]]] = None,
+-        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
+-        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
+-        device: Optional[Union[str, torch.device]] = None,
+-        cfg: Optional[dict] = None,
++        memory: Memory | tuple[Memory] | None = None,
++        observation_space: int | tuple[int] | gymnasium.Space | None = None,
++        action_space: int | tuple[int] | gymnasium.Space | None = None,
++        device: str | torch.device | None = None,
++        cfg: dict | None = None,
+     ) -> None:
+         """Proximal Policy Optimization (PPO)
+ 
+@@ -148,6 +148,7 @@
+         self._learning_rate_scheduler = self.cfg["learning_rate_scheduler"]
+ 
+         self._state_preprocessor = self.cfg["state_preprocessor"]
++        self._critic_state_preprocessor = self.cfg["critic_state_preprocessor"]
+         self._value_preprocessor = self.cfg["value_preprocessor"]
+ 
+         self._discount_factor = self.cfg["discount_factor"]
+@@ -190,17 +191,30 @@
+         else:
+             self._state_preprocessor = self._empty_preprocessor
+ 
++        # set up separate critic state preprocessor for asymmetric actor-critic
++        if self._critic_state_preprocessor:
++            self._critic_state_preprocessor = self._critic_state_preprocessor(
++                **self.cfg["critic_state_preprocessor_kwargs"]
++            )
++            self.checkpoint_modules["critic_state_preprocessor"] = self._critic_state_preprocessor
++        else:
++            # Fall back to state_preprocessor if critic_state_preprocessor not specified
++            self._critic_state_preprocessor = None
++
+         if self._value_preprocessor:
+             self._value_preprocessor = self._value_preprocessor(**self.cfg["value_preprocessor_kwargs"])
+             self.checkpoint_modules["value_preprocessor"] = self._value_preprocessor
+         else:
+             self._value_preprocessor = self._empty_preprocessor
+ 
+-    def init(self, trainer_cfg: Optional[Mapping[str, Any]] = None) -> None:
++    def init(self, trainer_cfg: Mapping[str, Any] | None = None) -> None:
+         """Initialize the agent"""
+         super().init(trainer_cfg=trainer_cfg)
+         self.set_mode("eval")
+ 
++        # Determine critic state size from config or fall back to observation space
++        critic_state_size = self.cfg.get("critic_state_preprocessor_kwargs", {}).get("size", self.observation_space)
++
+         # create tensors in memory
+         if self.memory is not None:
+             self.memory.create_tensor(name="states", size=self.observation_space, dtype=torch.float32)
+@@ -212,13 +226,17 @@
+             self.memory.create_tensor(name="values", size=1, dtype=torch.float32)
+             self.memory.create_tensor(name="returns", size=1, dtype=torch.float32)
+             self.memory.create_tensor(name="advantages", size=1, dtype=torch.float32)
++            # Create tensor for critic states (asymmetric actor-critic)
++            self.memory.create_tensor(name="critic_states", size=critic_state_size, dtype=torch.float32)
+ 
+             # tensors sampled during training
+-            self._tensors_names = ["states", "actions", "log_prob", "values", "returns", "advantages"]
++            self._tensors_names = ["states", "actions", "log_prob", "values", "returns", "advantages", "critic_states"]
+ 
+         # create temporary variables needed for storage and computation
+         self._current_log_prob = None
+         self._current_next_states = None
++        self._current_critic_states = None
++        self._current_next_critic_states = None
+ 
+     def act(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
+         """Process the environment's states to make a decision (actions) using the main policy
+@@ -285,20 +303,40 @@
+         if self.memory is not None:
+             self._current_next_states = next_states
+ 
++            # Extract critic states from infos for asymmetric actor-critic.
++            # Only use separate critic states when a critic_state_preprocessor is
++            # configured — this signals true asymmetric training.  Without it
++            # (e.g. symmetric PPO), the critic uses the same observations as the
++            # actor, so we must ignore the env-provided critic_states which may
++            # have a different dimensionality.
++            critic_states = None
++            next_critic_states = None
++            if self._critic_state_preprocessor is not None and isinstance(infos, dict):
++                critic_states = infos.get("critic_states", None)
++                next_critic_states = infos.get("next_critic_states", None)
++            self._current_critic_states = critic_states if critic_states is not None else states
++            # Next critic states are used for bootstrapping
++            self._current_next_critic_states = next_critic_states if next_critic_states is not None else next_states
++
+             # reward shaping
+             if self._rewards_shaper is not None:
+                 rewards = self._rewards_shaper(rewards, timestep, timesteps)
+ 
+-            # compute values
++            # compute values using critic states (asymmetric actor-critic)
++            # Use the separate critic state preprocessor if available
+             with torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
+-                values, _, _ = self.value.act({"states": self._state_preprocessor(states)}, role="value")
++                if self._critic_state_preprocessor is not None:
++                    value_input = self._critic_state_preprocessor(self._current_critic_states)
++                else:
++                    value_input = self._state_preprocessor(states)
++                values, _, _ = self.value.act({"states": value_input}, role="value")
+                 values = self._value_preprocessor(values, inverse=True)
+ 
+             # time-limit (truncation) bootstrapping
+             if self._time_limit_bootstrap:
+                 rewards += self._discount_factor * values * truncated
+ 
+-            # storage transition in memory
++            # storage transition in memory (including critic states)
+             self.memory.add_samples(
+                 states=states,
+                 actions=actions,
+@@ -308,6 +346,7 @@
+                 truncated=truncated,
+                 log_prob=self._current_log_prob,
+                 values=values,
++                critic_states=self._current_critic_states,
+             )
+             for memory in self.secondary_memories:
+                 memory.add_samples(
+@@ -319,6 +358,7 @@
+                     truncated=truncated,
+                     log_prob=self._current_log_prob,
+                     values=values,
++                    critic_states=self._current_critic_states,
+                 )
+ 
+     def pre_interaction(self, timestep: int, timesteps: int) -> None:
+@@ -404,12 +444,16 @@
+ 
+             return returns, advantages
+ 
+-        # compute returns and advantages
++            # compute returns and advantages using critic states (asymmetric actor-critic)
++
+         with torch.no_grad(), torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
+             self.value.train(False)
+-            last_values, _, _ = self.value.act(
+-                {"states": self._state_preprocessor(self._current_next_states.float())}, role="value"
+-            )
++            # Use critic states for value computation if available
++            if self._critic_state_preprocessor is not None and self._current_next_critic_states is not None:
++                value_input = self._critic_state_preprocessor(self._current_next_critic_states.float())
++            else:
++                value_input = self._state_preprocessor(self._current_next_states.float())
++            last_values, _, _ = self.value.act({"states": value_input}, role="value")
+             self.value.train(True)
+             last_values = self._value_preprocessor(last_values, inverse=True)
+ 
+@@ -438,7 +482,7 @@
+         for epoch in range(self._learning_epochs):
+             kl_divergences = []
+ 
+-            # mini-batches loop
++            # mini-batches loop (now includes critic_states)
+             for (
+                 sampled_states,
+                 sampled_actions,
+@@ -446,14 +490,16 @@
+                 sampled_values,
+                 sampled_returns,
+                 sampled_advantages,
++                sampled_critic_states,
+             ) in sampled_batches:
+ 
+                 with torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
+ 
+-                    sampled_states = self._state_preprocessor(sampled_states, train=not epoch)
++                    # Policy uses observations (state_preprocessor)
++                    sampled_states_preprocessed = self._state_preprocessor(sampled_states, train=not epoch)
+ 
+                     _, next_log_prob, _ = self.policy.act(
+-                        {"states": sampled_states, "taken_actions": sampled_actions}, role="policy"
++                        {"states": sampled_states_preprocessed, "taken_actions": sampled_actions}, role="policy"
+                     )
+ 
+                     # compute approximate KL divergence
+@@ -481,8 +527,12 @@
+ 
+                     policy_loss = -torch.min(surrogate, surrogate_clipped).mean()
+ 
+-                    # compute value loss
+-                    predicted_values, _, _ = self.value.act({"states": sampled_states}, role="value")
++                    # compute value loss using critic states (asymmetric actor-critic)
++                    if self._critic_state_preprocessor is not None:
++                        critic_input = self._critic_state_preprocessor(sampled_critic_states, train=not epoch)
++                    else:
++                        critic_input = sampled_states_preprocessed
++                    predicted_values, _, _ = self.value.act({"states": critic_input}, role="value")
+ 
+                     if self._clip_predicted_values:
+                         predicted_values = sampled_values + torch.clip(
+diff -ruN skrl_a/skrl/agents/torch/ppo/ppo_rnn.py skrl_b/skrl/agents/torch/ppo/ppo_rnn.py
+--- skrl_a/skrl/agents/torch/ppo/ppo_rnn.py	2026-09-18 09:06:11.580349826 +0200
++++ skrl_b/skrl/agents/torch/ppo/ppo_rnn.py	2026-09-18 09:06:11.603141956 +0200
+@@ -32,6 +32,8 @@
+ 
+     "state_preprocessor": None,             # state preprocessor class (see skrl.resources.preprocessors)
+     "state_preprocessor_kwargs": {},        # state preprocessor's kwargs (e.g. {"size": env.observation_space})
++    "critic_state_preprocessor": None,      # separate preprocessor for critic states (asymmetric actor-critic)
++    "critic_state_preprocessor_kwargs": {}, # critic state preprocessor's kwargs (e.g. {"size": env.state_space})
+     "value_preprocessor": None,             # value preprocessor class (see skrl.resources.preprocessors)
+     "value_preprocessor_kwargs": {},        # value preprocessor's kwargs (e.g. {"size": 1})
+ 
+@@ -148,6 +150,7 @@
+         self._learning_rate_scheduler = self.cfg["learning_rate_scheduler"]
+ 
+         self._state_preprocessor = self.cfg["state_preprocessor"]
++        self._critic_state_preprocessor = self.cfg["critic_state_preprocessor"]
+         self._value_preprocessor = self.cfg["value_preprocessor"]
+ 
+         self._discount_factor = self.cfg["discount_factor"]
+@@ -190,6 +193,14 @@
+         else:
+             self._state_preprocessor = self._empty_preprocessor
+ 
++        # set up separate critic state preprocessor for asymmetric actor-critic
++        if self._critic_state_preprocessor:
++            self._critic_state_preprocessor = self._critic_state_preprocessor(**self.cfg["critic_state_preprocessor_kwargs"])
++            self.checkpoint_modules["critic_state_preprocessor"] = self._critic_state_preprocessor
++        else:
++            # Fall back to state_preprocessor if critic_state_preprocessor not specified
++            self._critic_state_preprocessor = None
++
+         if self._value_preprocessor:
+             self._value_preprocessor = self._value_preprocessor(**self.cfg["value_preprocessor_kwargs"])
+             self.checkpoint_modules["value_preprocessor"] = self._value_preprocessor
+@@ -201,6 +212,9 @@
+         super().init(trainer_cfg=trainer_cfg)
+         self.set_mode("eval")
+ 
++        # Determine critic state size from config or fall back to observation space
++        critic_state_size = self.cfg.get("critic_state_preprocessor_kwargs", {}).get("size", self.observation_space)
++
+         # create tensors in memory
+         if self.memory is not None:
+             self.memory.create_tensor(name="states", size=self.observation_space, dtype=torch.float32)
+@@ -212,6 +226,7 @@
+             self.memory.create_tensor(name="values", size=1, dtype=torch.float32)
+             self.memory.create_tensor(name="returns", size=1, dtype=torch.float32)
+             self.memory.create_tensor(name="advantages", size=1, dtype=torch.float32)
++            self.memory.create_tensor(name="critic_states", size=critic_state_size, dtype=torch.float32)
+ 
+             # tensors sampled during training
+             self._tensors_names = [
+@@ -223,6 +238,7 @@
+                 "values",
+                 "returns",
+                 "advantages",
++                "critic_states",
+             ]
+ 
+         # RNN specifications
+@@ -263,6 +279,8 @@
+         # create temporary variables needed for storage and computation
+         self._current_log_prob = None
+         self._current_next_states = None
++        self._current_critic_states = None
++        self._current_next_critic_states = None
+ 
+     def act(self, states: torch.Tensor, timestep: int, timesteps: int) -> torch.Tensor:
+         """Process the environment's states to make a decision (actions) using the main policy
+@@ -336,14 +354,34 @@
+         if self.memory is not None:
+             self._current_next_states = next_states
+ 
++            # Extract critic states from infos for asymmetric actor-critic.
++            # Only use privileged critic states when a separate critic preprocessor
++            # is configured; otherwise the critic shares the actor's observation
++            # space and the memory was sized accordingly.
++            if self._critic_state_preprocessor is not None:
++                critic_states = infos.get("critic_states", None) if isinstance(infos, dict) else None
++                next_critic_states = infos.get("next_critic_states", None) if isinstance(infos, dict) else None
++                self._current_critic_states = critic_states if critic_states is not None else states
++                self._current_next_critic_states = (
++                    next_critic_states if next_critic_states is not None else next_states
++                )
++            else:
++                # Symmetric: critic uses same observation as actor
++                self._current_critic_states = states
++                self._current_next_critic_states = next_states
++
+             # reward shaping
+             if self._rewards_shaper is not None:
+                 rewards = self._rewards_shaper(rewards, timestep, timesteps)
+ 
+-            # compute values
++            # compute values using critic states (asymmetric actor-critic)
+             with torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
+                 rnn = {"rnn": self._rnn_initial_states["value"]} if self._rnn else {}
+-                values, _, outputs = self.value.act({"states": self._state_preprocessor(states), **rnn}, role="value")
++                if self._critic_state_preprocessor is not None:
++                    value_input = self._critic_state_preprocessor(self._current_critic_states)
++                else:
++                    value_input = self._state_preprocessor(states)
++                values, _, outputs = self.value.act({"states": value_input, **rnn}, role="value")
+                 values = self._value_preprocessor(values, inverse=True)
+ 
+             # time-limit (truncation) bootstrapping
+@@ -371,6 +409,7 @@
+                 truncated=truncated,
+                 log_prob=self._current_log_prob,
+                 values=values,
++                critic_states=self._current_critic_states,
+                 **rnn_states,
+             )
+             for memory in self.secondary_memories:
+@@ -383,6 +422,7 @@
+                     truncated=truncated,
+                     log_prob=self._current_log_prob,
+                     values=values,
++                    critic_states=self._current_critic_states,
+                     **rnn_states,
+                 )
+ 
+@@ -490,9 +530,11 @@
+         with torch.no_grad(), torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
+             self.value.train(False)
+             rnn = {"rnn": self._rnn_initial_states["value"]} if self._rnn else {}
+-            last_values, _, _ = self.value.act(
+-                {"states": self._state_preprocessor(self._current_next_states.float()), **rnn}, role="value"
+-            )
++            if self._critic_state_preprocessor is not None and self._current_next_critic_states is not None:
++                value_input = self._critic_state_preprocessor(self._current_next_critic_states.float())
++            else:
++                value_input = self._state_preprocessor(self._current_next_states.float())
++            last_values, _, _ = self.value.act({"states": value_input, **rnn}, role="value")
+             self.value.train(True)
+             last_values = self._value_preprocessor(last_values, inverse=True)
+ 
+@@ -541,6 +583,7 @@
+                 sampled_values,
+                 sampled_returns,
+                 sampled_advantages,
++                sampled_critic_states,
+             ) in enumerate(sampled_batches):
+ 
+                 if self._rnn:
+@@ -602,7 +645,11 @@
+                     policy_loss = -torch.min(surrogate, surrogate_clipped).mean()
+ 
+                     # compute value loss
+-                    predicted_values, _, _ = self.value.act({"states": sampled_states, **rnn_value}, role="value")
++                    if self._critic_state_preprocessor is not None:
++                        critic_input = self._critic_state_preprocessor(sampled_critic_states, train=not epoch)
++                    else:
++                        critic_input = sampled_states
++                    predicted_values, _, _ = self.value.act({"states": critic_input, **rnn_value}, role="value")
+ 
+                     if self._clip_predicted_values:
+                         predicted_values = sampled_values + torch.clip(
+diff -ruN skrl_a/skrl/envs/wrappers/torch/isaaclab_envs.py skrl_b/skrl/envs/wrappers/torch/isaaclab_envs.py
+--- skrl_a/skrl/envs/wrappers/torch/isaaclab_envs.py	2026-09-18 09:06:11.582826409 +0200
++++ skrl_b/skrl/envs/wrappers/torch/isaaclab_envs.py	2026-09-18 09:06:11.606030485 +0200
+@@ -19,11 +19,12 @@
+ 
+         self._reset_once = True
+         self._observations = None
++        self._critic_states = None  # For asymmetric actor-critic
+         self._info = {}
+ 
+     @property
+     def state_space(self) -> Union[gymnasium.Space, None]:
+-        """State space"""
++        """State space (for critic in asymmetric training)"""
+         try:
+             return self._unwrapped.single_observation_space["critic"]
+         except KeyError:
+@@ -59,8 +60,20 @@
+         :rtype: tuple of torch.Tensor and any other info
+         """
+         actions = unflatten_tensorized_space(self.action_space, actions)
++        prev_critic_states = self._critic_states
+         observations, reward, terminated, truncated, self._info = self._env.step(actions)
+         self._observations = flatten_tensorized_space(tensorize_space(self.observation_space, observations["policy"]))
++        # Store critic states for asymmetric actor-critic and include in info
++        if "critic" in observations:
++            next_critic_states = observations["critic"]
++            self._critic_states = next_critic_states
++            # Provide current critic states for transition storage (prev if available)
++            if prev_critic_states is not None:
++                self._info["critic_states"] = prev_critic_states
++            else:
++                self._info["critic_states"] = next_critic_states
++            # Provide next critic states for bootstrapping
++            self._info["next_critic_states"] = next_critic_states
+         return self._observations, reward.view(-1, 1), terminated.view(-1, 1), truncated.view(-1, 1), self._info
+ 
+     def reset(self) -> Tuple[torch.Tensor, Any]:
+@@ -74,9 +87,21 @@
+             self._observations = flatten_tensorized_space(
+                 tensorize_space(self.observation_space, observations["policy"])
+             )
++            # Store critic states for asymmetric actor-critic and include in info
++            if "critic" in observations:
++                self._critic_states = observations["critic"]
++                self._info["critic_states"] = self._critic_states
+             self._reset_once = False
+         return self._observations, self._info
+ 
++    def get_critic_states(self) -> Union[torch.Tensor, None]:
++        """Get the current critic states for asymmetric actor-critic training.
++
++        :return: Critic states tensor or None if not available
++        :rtype: torch.Tensor or None
++        """
++        return self._critic_states
++
+     def render(self, *args, **kwargs) -> None:
+         """Render the environment"""
+         return None
+diff -ruN skrl_a/skrl/utils/model_instantiators/torch/gaussian_rnn.py skrl_b/skrl/utils/model_instantiators/torch/gaussian_rnn.py
+--- skrl_a/skrl/utils/model_instantiators/torch/gaussian_rnn.py	1970-01-01 01:00:00.000000000 +0100
++++ skrl_b/skrl/utils/model_instantiators/torch/gaussian_rnn.py	2026-09-18 09:06:11.610865076 +0200
+@@ -0,0 +1,249 @@
++from typing import Any, Mapping, Optional, Sequence, Tuple, Union
++
++import gymnasium
++
++import torch
++import torch.nn as nn
++
++from skrl.models.torch import GaussianMixin, Model
++from skrl.utils.model_instantiators.torch.common import convert_deprecated_parameters
++from skrl.utils.spaces.torch import flatten_tensorized_space, unflatten_tensorized_space
++
++
++_ACTIVATION_MAP = {
++    "elu": nn.ELU,
++    "leaky_relu": nn.LeakyReLU,
++    "relu": nn.ReLU,
++    "selu": nn.SELU,
++    "sigmoid": nn.Sigmoid,
++    "softmax": nn.Softmax,
++    "softplus": nn.Softplus,
++    "softsign": nn.Softsign,
++    "tanh": nn.Tanh,
++}
++
++
++def _expand_activations(activations: Union[str, Sequence[str], None], num_layers: int) -> Sequence[Optional[str]]:
++    if activations is None:
++        return [None] * num_layers
++    if isinstance(activations, str):
++        return [activations] * num_layers
++    if isinstance(activations, (list, tuple)):
++        if len(activations) == 0:
++            return [None] * num_layers
++        if len(activations) == 1:
++            return list(activations) * num_layers
++        if len(activations) == num_layers:
++            return list(activations)
++        raise ValueError(f"Activations length ({len(activations)}) doesn't match layers ({num_layers})")
++    raise ValueError(f"Invalid or unsupported activations definition: {activations}")
++
++
++def _parse_linear_size(layer: Any) -> int:
++    if isinstance(layer, (int, float)):
++        return int(layer)
++    if isinstance(layer, dict):
++        if "linear" not in layer:
++            raise ValueError(f"Invalid or unsupported layer definition: {layer}")
++        value = layer["linear"]
++        if isinstance(value, (int, float)):
++            return int(value)
++        if isinstance(value, list):
++            return int(value[0])
++        if isinstance(value, dict):
++            if "out_features" in value:
++                return int(value["out_features"])
++            if "features" in value:
++                return int(value["features"])
++        raise ValueError(f"Invalid or unsupported 'linear' layer definition: {value}")
++    raise ValueError(f"Invalid or unsupported layer definition: {layer}")
++
++
++def _build_mlp(input_size: int, layers: Sequence[Any], activations: Union[str, Sequence[str], None]) -> Tuple[nn.Module, int]:
++    if not layers:
++        return nn.Identity(), input_size
++    activations = _expand_activations(activations, len(layers))
++    modules: list[nn.Module] = []
++    in_features = input_size
++    for layer, activation in zip(layers, activations):
++        out_features = _parse_linear_size(layer)
++        modules.append(nn.Linear(in_features, out_features))
++        if activation:
++            activation_cls = _ACTIVATION_MAP.get(str(activation).lower())
++            if activation_cls is None:
++                raise ValueError(f"Unsupported activation: {activation}")
++            if activation_cls is nn.Softmax:
++                modules.append(activation_cls(dim=-1))
++            else:
++                modules.append(activation_cls())
++        in_features = out_features
++    return nn.Sequential(*modules), in_features
++
++
++class GaussianRNNModel(GaussianMixin, Model):
++    def __init__(
++        self,
++        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
++        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
++        device: Optional[Union[str, torch.device]] = None,
++        clip_actions: bool = False,
++        clip_log_std: bool = True,
++        min_log_std: float = -20,
++        max_log_std: float = 2,
++        reduction: str = "sum",
++        initial_log_std: float = 0.0,
++        fixed_log_std: bool = False,
++        network: Sequence[Mapping[str, Any]] = (),
++        rnn: Optional[Mapping[str, Any]] = None,
++        output: Union[str, Sequence[str]] = "",
++        num_envs: int = 1,
++    ) -> None:
++        Model.__init__(self, observation_space, action_space, device)
++        GaussianMixin.__init__(self, clip_actions, clip_log_std, min_log_std, max_log_std, reduction)
++
++        # Pre-RNN MLP (optional)
++        layers: Sequence[Any] = []
++        activations: Union[str, Sequence[str], None] = None
++        if network:
++            if len(network) != 1:
++                raise ValueError("GaussianRNNModel only supports a single network container")
++            layers = network[0].get("layers", [])
++            activations = network[0].get("activations", None)
++        self.mlp, mlp_out = _build_mlp(self.num_observations, layers, activations)
++
++        # RNN configuration
++        rnn_cfg = rnn or {}
++        rnn_type = str(rnn_cfg.get("type", "gru")).lower()
++        if rnn_type != "gru":
++            raise ValueError(f"Unsupported RNN type: {rnn_type}")
++        self._rnn_hidden_size = int(rnn_cfg.get("hidden_size", mlp_out))
++        self._rnn_num_layers = int(rnn_cfg.get("num_layers", 1))
++        self._rnn_sequence_length = int(rnn_cfg.get("sequence_length", 1))
++        self._rnn_num_envs = max(int(num_envs), 1)
++        rnn_dropout = float(rnn_cfg.get("dropout", 0.0))
++
++        self.rnn = nn.GRU(
++            input_size=mlp_out,
++            hidden_size=self._rnn_hidden_size,
++            num_layers=self._rnn_num_layers,
++            dropout=rnn_dropout if self._rnn_num_layers > 1 else 0.0,
++            batch_first=True,
++        )
++
++        self.output_layer = nn.Linear(self._rnn_hidden_size, self.num_actions)
++        self.log_std_parameter = nn.Parameter(
++            torch.full(size=(self.num_actions,), fill_value=float(initial_log_std)),
++            requires_grad=not fixed_log_std,
++        )
++
++    def get_specification(self) -> Mapping[str, Any]:
++        return {
++            "rnn": {
++                "sizes": [(self._rnn_num_layers, self._rnn_num_envs, self._rnn_hidden_size)],
++                "sequence_length": self._rnn_sequence_length,
++            }
++        }
++
++    def compute(self, inputs, role: str = ""):
++        states = unflatten_tensorized_space(self.observation_space, inputs.get("states"))
++        if not torch.is_tensor(states):
++            states = flatten_tensorized_space(states)
++
++        x = states
++        if x.dim() == 1:
++            x = x.unsqueeze(0)
++        if x.dim() == 2:
++            x = self.mlp(x)
++            x = x.unsqueeze(1)
++        elif x.dim() == 3:
++            batch, seq_len, feat = x.shape
++            x = x.reshape(batch * seq_len, feat)
++            x = self.mlp(x)
++            x = x.reshape(batch, seq_len, -1)
++        else:
++            x = x.view(x.shape[0], -1)
++            x = self.mlp(x)
++            x = x.unsqueeze(1)
++
++        rnn_states = inputs.get("rnn", None)
++        if isinstance(rnn_states, torch.Tensor):
++            rnn_states = [rnn_states]
++        if rnn_states and x.dim() == 3:
++            batch_from_state = rnn_states[0].shape[1]
++            if x.shape[0] != batch_from_state and x.shape[1] == batch_from_state:
++                x = x.transpose(0, 1)
++        if not rnn_states:
++            h0 = torch.zeros(
++                self._rnn_num_layers, x.shape[0], self._rnn_hidden_size, device=x.device, dtype=x.dtype
++            )
++        else:
++            h0 = rnn_states[0]
++            if h0.dim() == 2:
++                h0 = h0.unsqueeze(0)
++
++        terminated = inputs.get("terminated", None)
++        if terminated is not None:
++            done = terminated
++            if done.dim() > 1:
++                done = done[..., 0]
++            if done.dim() > 1:
++                done = done[:, -1]
++            done = done.reshape(-1).bool()
++            if done.any():
++                h0[:, done] = 0.0
++
++        rnn_out, h_n = self.rnn(x, h0)
++        features = rnn_out[:, -1, :]
++        output = self.output_layer(features)
++        return output, self.log_std_parameter, {"rnn": [h_n]}
++
++
++def gaussian_rnn_model(
++    observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
++    action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
++    device: Optional[Union[str, torch.device]] = None,
++    clip_actions: bool = False,
++    clip_log_std: bool = True,
++    min_log_std: float = -20,
++    max_log_std: float = 2,
++    reduction: str = "sum",
++    initial_log_std: float = 0.0,
++    fixed_log_std: bool = False,
++    network: Sequence[Mapping[str, Any]] = (),
++    rnn: Optional[Mapping[str, Any]] = None,
++    output: Union[str, Sequence[str]] = "",
++    return_source: bool = False,
++    num_envs: int = 1,
++    *args,
++    **kwargs,
++) -> Union[Model, str]:
++    """Instantiate a Gaussian RNN (GRU) model"""
++    # compatibility with versions prior to 1.3.0
++    if not network and kwargs:
++        network, output = convert_deprecated_parameters(kwargs)
++
++    if return_source:
++        rnn_cfg = rnn or {}
++        return (
++            "GaussianRNNModel("
++            f"network_layers={[n.get('layers', []) for n in (network or [])]}, "
++            f"rnn={rnn_cfg}, "
++            f"output={output})"
++        )
++
++    return GaussianRNNModel(
++        observation_space=observation_space,
++        action_space=action_space,
++        device=device,
++        clip_actions=clip_actions,
++        clip_log_std=clip_log_std,
++        min_log_std=min_log_std,
++        max_log_std=max_log_std,
++        reduction=reduction,
++        initial_log_std=initial_log_std,
++        fixed_log_std=fixed_log_std,
++        network=network,
++        rnn=rnn,
++        output=output,
++        num_envs=num_envs,
++    )
+diff -ruN skrl_a/skrl/utils/model_instantiators/torch/__init__.py skrl_b/skrl/utils/model_instantiators/torch/__init__.py
+--- skrl_a/skrl/utils/model_instantiators/torch/__init__.py	2026-09-18 09:06:11.586076641 +0200
++++ skrl_b/skrl/utils/model_instantiators/torch/__init__.py	2026-09-18 09:06:11.610821342 +0200
+@@ -3,6 +3,7 @@
+ from skrl.utils.model_instantiators.torch.categorical import categorical_model
+ from skrl.utils.model_instantiators.torch.deterministic import deterministic_model
+ from skrl.utils.model_instantiators.torch.gaussian import gaussian_model
++from skrl.utils.model_instantiators.torch.gaussian_rnn import gaussian_rnn_model
+ from skrl.utils.model_instantiators.torch.multicategorical import multicategorical_model
+ from skrl.utils.model_instantiators.torch.multivariate_gaussian import multivariate_gaussian_model
+ from skrl.utils.model_instantiators.torch.shared import shared_model
+diff -ruN skrl_a/skrl/utils/runner/torch/runner.py skrl_b/skrl/utils/runner/torch/runner.py
+--- skrl_a/skrl/utils/runner/torch/runner.py	2026-09-18 09:06:11.586226886 +0200
++++ skrl_b/skrl/utils/runner/torch/runner.py	2026-09-18 09:06:11.611081059 +0200
+@@ -1,6 +1,6 @@
+-from typing import Any, Mapping, Type, Union
+-
+ import copy
++from typing import Any, Type, Union
++from collections.abc import Mapping
+ 
+ from skrl import logger
+ from skrl.agents.torch import Agent
+@@ -14,7 +14,7 @@
+ 
+ 
+ class Runner:
+-    def __init__(self, env: Union[Wrapper, MultiAgentEnvWrapper], cfg: Mapping[str, Any]) -> None:
++    def __init__(self, env: Wrapper | MultiAgentEnvWrapper, cfg: Mapping[str, Any]) -> None:
+         """Experiment runner
+ 
+         Class that configures and instantiates skrl components to execute training/evaluation workflows in a few lines of code
+@@ -65,7 +65,7 @@
+             logger.error(f"Loading yaml error: {e}")
+             return {}
+ 
+-    def _component(self, name: str) -> Type:
++    def _component(self, name: str) -> type:
+         """Get skrl component (e.g.: agent, trainer, etc..) from string identifier
+ 
+         :return: skrl component
+@@ -75,14 +75,26 @@
+         # model
+         if name == "gaussianmixin":
+             from skrl.utils.model_instantiators.torch import gaussian_model as component
++        elif name == "gaussianrnnmixin":
++            from skrl.utils.model_instantiators.torch import (
++                gaussian_rnn_model as component,
++            )
+         elif name == "categoricalmixin":
+-            from skrl.utils.model_instantiators.torch import categorical_model as component
++            from skrl.utils.model_instantiators.torch import (
++                categorical_model as component,
++            )
+         elif name == "multicategoricalmixin":
+-            from skrl.utils.model_instantiators.torch import multicategorical_model as component
++            from skrl.utils.model_instantiators.torch import (
++                multicategorical_model as component,
++            )
+         elif name == "deterministicmixin":
+-            from skrl.utils.model_instantiators.torch import deterministic_model as component
++            from skrl.utils.model_instantiators.torch import (
++                deterministic_model as component,
++            )
+         elif name == "multivariategaussianmixin":
+-            from skrl.utils.model_instantiators.torch import multivariate_gaussian_model as component
++            from skrl.utils.model_instantiators.torch import (
++                multivariate_gaussian_model as component,
++            )
+         elif name == "shared":
+             from skrl.utils.model_instantiators.torch import shared_model as component
+         # memory
+@@ -117,6 +129,13 @@
+             from skrl.agents.torch.ppo import PPO, PPO_DEFAULT_CONFIG
+ 
+             component = PPO_DEFAULT_CONFIG if "default_config" in name else PPO
++        elif name in ["ppo_rnn", "ppo_rnn_default_config"]:
++            from skrl.agents.torch.ppo.ppo_rnn import (
++                PPO_DEFAULT_CONFIG as PPO_RNN_DEFAULT_CONFIG,
++            )
++            from skrl.agents.torch.ppo.ppo_rnn import PPO_RNN
++
++            component = PPO_RNN_DEFAULT_CONFIG if "default_config" in name else PPO_RNN
+         elif name in ["rpo", "rpo_default_config"]:
+             from skrl.agents.torch.rpo import RPO, RPO_DEFAULT_CONFIG
+ 
+@@ -161,6 +180,7 @@
+             "learning_rate_scheduler",
+             "shared_state_preprocessor",
+             "state_preprocessor",
++            "critic_state_preprocessor",
+             "value_preprocessor",
+             "amp_state_preprocessor",
+             "noise",
+@@ -190,7 +210,7 @@
+         return update_dict(copy.deepcopy(cfg))
+ 
+     def _generate_models(
+-        self, env: Union[Wrapper, MultiAgentEnvWrapper], cfg: Mapping[str, Any]
++        self, env: Wrapper | MultiAgentEnvWrapper, cfg: Mapping[str, Any]
+     ) -> Mapping[str, Mapping[str, Model]]:
+         """Generate model instances according to the environment specification and the given config
+ 
+@@ -202,6 +222,7 @@
+         multi_agent = isinstance(env, MultiAgentEnvWrapper)
+         device = env.device
+         possible_agents = env.possible_agents if multi_agent else ["agent"]
++        num_envs = env.num_envs if hasattr(env, "num_envs") else 1
+         state_spaces = env.state_spaces if multi_agent else {"agent": env.state_space}
+         observation_spaces = env.observation_spaces if multi_agent else {"agent": env.observation_space}
+         action_spaces = env.action_spaces if multi_agent else {"agent": env.action_space}
+@@ -234,6 +255,19 @@
+                     model_class = self._component(model_class)
+                     # get specific spaces according to agent/model cfg
+                     observation_space = observation_spaces[agent_id]
++                    # Use state_space for value network in asymmetric actor-critic.
++                    # Applies when critic_state_preprocessor is set, OR when the
++                    # agent class requires asymmetric states (PPO_RNN_ASYM, PPO_ASYM).
++                    if role == "value" and state_spaces[agent_id] is not None:
++                        agent_cfg_check = _cfg.get("agent", {})
++                        agent_cls_name = agent_cfg_check.get("class", "").upper()
++                        uses_asymmetric = (
++                            agent_cfg_check.get("critic_state_preprocessor")
++                            or "ASYM" in agent_cls_name
++                            or agent_cfg_check.get("vsh_critic")
++                        )
++                        if uses_asymmetric:
++                            observation_space = state_spaces[agent_id]
+                     if agent_class == "mappo" and role == "value":
+                         observation_space = state_spaces[agent_id]
+                     if agent_class == "amp" and role == "discriminator":
+@@ -241,14 +275,18 @@
+                             observation_space = env.amp_observation_space
+                         except Exception as e:
+                             logger.warning(
+-                                "Unable to get AMP space via 'env.amp_observation_space'. Using 'env.observation_space' instead"
++                                "Unable to get AMP space via 'env.amp_observation_space'. Using 'env.observation_space'"
++                                " instead"
+                             )
+                     # print model source
++                    model_kwargs = self._process_cfg(models_cfg[role])
++                    if "rnn" in model_kwargs:
++                        model_kwargs.setdefault("num_envs", num_envs)
+                     source = model_class(
+                         observation_space=observation_space,
+                         action_space=action_spaces[agent_id],
+                         device=device,
+-                        **self._process_cfg(models_cfg[role]),
++                        **model_kwargs,
+                         return_source=True,
+                     )
+                     print("==================================================")
+@@ -261,7 +299,7 @@
+                         observation_space=observation_space,
+                         action_space=action_spaces[agent_id],
+                         device=device,
+-                        **self._process_cfg(models_cfg[role]),
++                        **model_kwargs,
+                     )
+             # shared models
+             else:
+@@ -318,7 +356,7 @@
+ 
+     def _generate_agent(
+         self,
+-        env: Union[Wrapper, MultiAgentEnvWrapper],
++        env: Wrapper | MultiAgentEnvWrapper,
+         cfg: Mapping[str, Any],
+         models: Mapping[str, Mapping[str, Model]],
+     ) -> Agent:
+@@ -407,13 +445,31 @@
+                 "reply_buffer": reply_buffer,
+                 "collect_reference_motions": lambda num_samples: env.collect_reference_motions(num_samples),
+             }
+-        elif agent_class in ["a2c", "cem", "ddpg", "ddqn", "dqn", "ppo", "rpo", "sac", "td3", "trpo"]:
++        elif agent_class in ["a2c", "cem", "ddpg", "ddqn", "dqn", "ppo", "ppo_rnn", "rpo", "sac", "td3", "trpo"]:
+             agent_id = possible_agents[0]
+             agent_cfg = self._component(f"{agent_class}_DEFAULT_CONFIG").copy()
+             agent_cfg.update(self._process_cfg(cfg["agent"]))
+             agent_cfg.get("state_preprocessor_kwargs", {}).update(
+                 {"size": observation_spaces[agent_id], "device": device}
+             )
++            # Set up critic_state_preprocessor for asymmetric actor-critic (PPO)
++            state_space = state_spaces[agent_id]
++            use_critic_preprocessor = bool(agent_cfg.get("critic_state_preprocessor"))
++            # Always ensure critic_state_preprocessor_kwargs has the state_space
++            # size when a valid state_space exists (needed by agent.init() to size
++            # the memory tensor, even when no preprocessor/scaler is used).
++            if agent_cfg.get("critic_state_preprocessor_kwargs", None) is None:
++                agent_cfg["critic_state_preprocessor_kwargs"] = {}
++            invalid_state_space = state_space is None
++            if not invalid_state_space and isinstance(state_space, (int, float)):
++                invalid_state_space = state_space <= 0
++            if invalid_state_space:
++                agent_cfg["critic_state_preprocessor"] = None
++                agent_cfg["critic_state_preprocessor_kwargs"] = {}
++            else:
++                agent_cfg["critic_state_preprocessor_kwargs"].update(
++                    {"size": state_space, "device": device}
++                )
+             agent_cfg.get("value_preprocessor_kwargs", {}).update({"size": 1, "device": device})
+             if agent_cfg.get("exploration", {}).get("noise", None):
+                 agent_cfg["exploration"].get("noise_kwargs", {}).update({"device": device})
+@@ -466,9 +522,7 @@
+             }
+         return self._component(agent_class)(cfg=agent_cfg, device=device, **agent_kwargs)
+ 
+-    def _generate_trainer(
+-        self, env: Union[Wrapper, MultiAgentEnvWrapper], cfg: Mapping[str, Any], agent: Agent
+-    ) -> Trainer:
++    def _generate_trainer(self, env: Wrapper | MultiAgentEnvWrapper, cfg: Mapping[str, Any], agent: Agent) -> Trainer:
+         """Generate trainer instance according to the environment specification and the given config and agent
+ 
+         :param env: Wrapped environment
+diff -ruN skrl_a/skrl/utils/spaces/torch/spaces.py skrl_b/skrl/utils/spaces/torch/spaces.py
+--- skrl_a/skrl/utils/spaces/torch/spaces.py	2026-09-18 09:06:11.586295501 +0200
++++ skrl_b/skrl/utils/spaces/torch/spaces.py	2026-09-18 09:06:11.611201484 +0200
+@@ -1,17 +1,14 @@
+-from typing import Any, Literal, Optional, Sequence, Union
++from typing import Any, Literal, Optional, Union
++from collections.abc import Sequence
+ 
+ import gymnasium
+-from gymnasium import spaces
+-
+ import numpy as np
+ import torch
+-
++from gymnasium import spaces
+ from skrl import config
+ 
+ 
+-def convert_gym_space(
+-    space: Optional["gym.Space"], *, squeeze_batch_dimension: bool = False
+-) -> Optional[gymnasium.Space]:
++def convert_gym_space(space: Optional["gym.Space"], *, squeeze_batch_dimension: bool = False) -> gymnasium.Space | None:
+     """Converts a gym space to a gymnasium space.
+ 
+     Args:
+@@ -58,7 +55,7 @@
+     raise ValueError(f"Unsupported space ({space})")
+ 
+ 
+-def tensorize_space(space: Optional[spaces.Space], x: Any, *, device: Optional[Union[str, torch.device]] = None) -> Any:
++def tensorize_space(space: spaces.Space | None, x: Any, *, device: str | torch.device | None = None) -> Any:
+     """Convert the sample/value items of a given gymnasium space to PyTorch tensors.
+ 
+     Args:
+@@ -115,7 +112,7 @@
+     raise ValueError(f"Unsupported space ({space})")
+ 
+ 
+-def untensorize_space(space: Optional[spaces.Space], x: Any, *, squeeze_batch_dimension: bool = True) -> Any:
++def untensorize_space(space: spaces.Space | None, x: Any, *, squeeze_batch_dimension: bool = True) -> Any:
+     """Convert a tensorized space to a gymnasium space with expected sample/value item types.
+ 
+     Args:
+@@ -184,7 +181,7 @@
+     raise ValueError(f"Unsupported space ({space})")
+ 
+ 
+-def flatten_tensorized_space(x: Any) -> Optional[torch.Tensor]:
++def flatten_tensorized_space(x: Any) -> torch.Tensor | None:
+     """Flatten a tensorized space.
+ 
+     Args:
+@@ -212,9 +209,7 @@
+     raise ValueError(f"Unsupported sample/value type ({type(x)})")
+ 
+ 
+-def unflatten_tensorized_space(
+-    space: Optional[Union[spaces.Space, Sequence[int], int]], x: Optional[torch.Tensor]
+-) -> Any:
++def unflatten_tensorized_space(space: spaces.Space | Sequence[int] | int | None, x: torch.Tensor | None) -> Any:
+     """Unflatten a tensor to create a tensorized space.
+ 
+     Args:
+@@ -261,7 +256,7 @@
+     raise ValueError(f"Unsupported space ({space})")
+ 
+ 
+-def compute_space_size(space: Optional[Union[spaces.Space, Sequence[int], int]], *, occupied_size: bool = False) -> int:
++def compute_space_size(space: spaces.Space | Sequence[int] | int | None, *, occupied_size: bool = False) -> int:
+     """Get the size (number of elements) of a space.
+ 
+     Args:
+@@ -300,7 +295,7 @@
+ 
+ 
+ def sample_space(
+-    space: Optional[spaces.Space], *, batch_size: int = 1, backend: str = Literal["numpy", "native"], device=None
++    space: spaces.Space | None, *, batch_size: int = 1, backend: str = Literal["numpy", "native"], device=None
+ ) -> Any:
+     """Generates a random sample from the specified space.
+ 

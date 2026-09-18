@@ -4,28 +4,27 @@
 #   "Memory-State Critic for Asymmetric Actor-Critic with Application to
 #    Vision-Based Pursuit-Evasion" (EWRL 2026)
 #
-# Runs the exact critic x arena x seed grid behind Figures 3 and 4: 32 runs at
+# Runs the exact critic x arena x seed grid behind Figures 3 and 4: 160 runs at
 # 512 envs x 100K timesteps = 5.12e7 environment steps each.
 #
-#   critic  paper symbol  open-arena seeds     wall-arena seeds
-#   ------  ------------  -------------------  -------------------
-#   Vs      V(s)          1, 5, 7, 42, 123     1, 5, 15, 42, 123
-#   Vsh     V(s, z^c)     1, 5, 7, 42, 123     1, 5, 15, 42, 123
-#   Vsz     V(s, z^a)     1, 7, 15, 27, 42     1, 5, 15, 42, 123
-#   Vsoa    V(s, o, a)    1, 42, 123           1, 42, 123
+#   critic  paper symbol   seeds (identical in both arenas)
+#   ------  -------------  ---------------------------------------------------
+#   Vs      V(s)           1 2 3 4 5 6 7 8 9 11 12 13 15 17 19 21 27 37 42 123
+#   Vsh     V(s, z^c)      (same)
+#   Vsz     V(s, z^a)      (same)
+#   Vsoa    V(s, o, a)     (same)
 #
-# The seed sets are recorded exactly as they were run. The open-arena Vsz set
-# differs from its Vs / Vsh siblings; this is a fact about how the sweep was
-# executed, not a deliberate design choice. V(s,o,a) has three seeds per arena
-# rather than five, as stated in Section 4.3 of the paper.
+# Every cell runs the same twenty seeds, so the comparison between critics is
+# paired. The May 2026 submission used a smaller, unbalanced grid; the
+# camera-ready replaces it entirely.
 #
-# Budget: ~5.5 h per run on an RTX 4090 at 512 envs, so ~7 GPU-days in total.
+# Budget: ~5.5 h per run on an RTX 4090 at 512 envs, so ~37 GPU-days in total.
 # Runs are sequential; split the grid across machines with --critics / --arena.
 #
 # Usage:
-#   ./scripts/reproduce_paper.sh --dry-run          # print the 32 commands
+#   ./scripts/reproduce_paper.sh --dry-run          # print the 160 commands
 #   ./scripts/reproduce_paper.sh                    # run everything
-#   ./scripts/reproduce_paper.sh --arena open       # open arena only (18 runs)
+#   ./scripts/reproduce_paper.sh --arena open       # open arena only (80 runs)
 #   ./scripts/reproduce_paper.sh --critics "Vsz Vsh"
 #
 # Environment:
@@ -58,15 +57,17 @@ done
 export WANDB_PROJECT="${WANDB_PROJECT:-critic_ablation}"
 
 # (critic, arena, seeds) — the grid exactly as it was run for the paper.
+# Every cell runs the same twenty seeds: 4 critics x 2 arenas x 20 = 160 runs.
+PAPER_SEEDS="1 2 3 4 5 6 7 8 9 11 12 13 15 17 19 21 27 37 42 123"
 GRID=(
-    "Vs|open|1 5 7 42 123"
-    "Vsh|open|1 5 7 42 123"
-    "Vsz|open|1 7 15 27 42"
-    "Vsoa|open|1 42 123"
-    "Vs|wall|1 5 15 42 123"
-    "Vsh|wall|1 5 15 42 123"
-    "Vsz|wall|1 5 15 42 123"
-    "Vsoa|wall|1 42 123"
+    "Vs|open|$PAPER_SEEDS"
+    "Vsh|open|$PAPER_SEEDS"
+    "Vsz|open|$PAPER_SEEDS"
+    "Vsoa|open|$PAPER_SEEDS"
+    "Vs|wall|$PAPER_SEEDS"
+    "Vsh|wall|$PAPER_SEEDS"
+    "Vsz|wall|$PAPER_SEEDS"
+    "Vsoa|wall|$PAPER_SEEDS"
 )
 
 _wanted() {  # _wanted <value> <space-separated filter>; empty filter = keep all

@@ -1,0 +1,43 @@
+# The test suite runs without Isaac Sim: tests/conftest.py installs an import hook on
+# sys.meta_path that stubs isaaclab, isaacsim, carb, omni, wandb and tensordict. That
+# makes the whole suite runnable on a stock CPU runner in a couple of minutes, which is
+# what lets this workflow exist at all.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install minimal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-minimal.txt
+
+      - name: Run tests
+        run: pytest tests/ -q
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Run pre-commit
+        run: |
+          python -m pip install --upgrade pip pre-commit
+          pre-commit run --all-files --show-diff-on-failure

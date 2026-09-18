@@ -18,7 +18,14 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ISAACLAB_COMMIT="549768529e3859845794a05b8fd3dfd00edadc9e"
+# This must be the exact tree that produced the paper's runs, which is not an official
+# Isaac Lab release: github.com/colson-louis/IsaacLab at d2579ea. That commit has since
+# diverged from the fork's main, so cloning the fork and checking out the SHA is not
+# reliable. It was submitted upstream as pull request #5725, and GitHub keeps PR head
+# refs fetchable indefinitely, so we fetch it from the official repository.
+# Building against any other commit silently changes the physics layer.
+ISAACLAB_COMMIT="d2579eacf8eba0864e2328f3f383a0fdb411e00b"
+ISAACLAB_FETCH_REF="refs/pull/5725/head"
 ISAACLAB_DIR="$REPO_ROOT/IsaacLab"
 VENV_DIR="$REPO_ROOT/.venv"
 
@@ -67,7 +74,31 @@ uv pip install \
   scipy==1.15.3 \
   matplotlib==3.10.3 \
   click==8.1.7 \
-  starlette==0.45.3
+  starlette==0.45.3 \
+  pandas \
+  seaborn
+
+# Isaac Lab's own dependencies. Step 6 installs Isaac Lab with --no-deps (its
+# metadata pulls a conflicting torch), so they must be installed explicitly.
+# Without these, `import isaaclab` fails on `warp` and no training run starts.
+uv pip install \
+  warp-lang==1.12.1 \
+  prettytable==3.3.0 \
+  trimesh \
+  "pyglet<2" \
+  "onnx>=1.18.0" \
+  einops \
+  transformers \
+  pillow==11.3.0 \
+  junitparser \
+  flaky \
+  hidapi==0.14.0.post2 \
+  imageio imageio-ffmpeg \
+  h5py \
+  "protobuf>=4.25.8,!=5.26.0" \
+  moviepy \
+  rich \
+  numba
 
 # ---------------------------------------------------------------------------
 # 4. Isaac Sim 5.1.0.0 from NVIDIA registry
@@ -124,7 +155,10 @@ rm -rf "$FLATDICT_TMP"
 if [ ! -d "$ISAACLAB_DIR/.git" ]; then
   echo "==> Cloning Isaac Lab @ $ISAACLAB_COMMIT..."
   git clone https://github.com/isaac-sim/IsaacLab.git "$ISAACLAB_DIR" --no-checkout
+  git -C "$ISAACLAB_DIR" fetch --no-tags origin "$ISAACLAB_FETCH_REF"
   git -C "$ISAACLAB_DIR" checkout "$ISAACLAB_COMMIT"
+  test "$(git -C "$ISAACLAB_DIR" rev-parse HEAD)" = "$ISAACLAB_COMMIT" \
+    || { echo "ERROR: Isaac Lab is not at $ISAACLAB_COMMIT" >&2; exit 1; }
 else
   echo "==> Isaac Lab already cloned at $ISAACLAB_DIR"
 fi
@@ -145,6 +179,17 @@ uv pip install -e "$REPO_ROOT/source/isaac_pursuit_evasion"
 # 8. Smoke tests
 # ---------------------------------------------------------------------------
 echo "==> Running smoke tests..."
+# tests/conftest.py stubs Isaac Sim, so pytest passing does NOT prove the
+# environment can train. Import the real stack first.
+python - <<'SMOKE'
+import importlib, sys
+missing = [m for m in ("warp", "isaaclab", "pandas", "seaborn", "skrl", "torch")
+           if not importlib.util.find_spec(m)]
+if missing:
+    sys.exit("ERROR: installed environment is missing: " + ", ".join(missing))
+import isaaclab, torch  # noqa: F401  (isaaclab imports warp at module level)
+print("  real-stack import OK (isaaclab, torch, plotting deps)")
+SMOKE
 python -m pytest "$REPO_ROOT/tests/" -q
 
 echo ""

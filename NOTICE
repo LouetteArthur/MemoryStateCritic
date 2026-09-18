@@ -20,7 +20,7 @@ https://github.com/Toni-SM/skrl
 
 A modified copy is vendored at `source/third_parties/skrl/`, with its original
 LICENSE intact. See `source/third_parties/skrl/FORK_NOTES.md` for what was
-changed and `skrl_1.4.3.patch` for the exact delta.
+changed and `source/third_parties/skrl/skrl_1.4.3.patch` for the exact delta.
 
 ## Crazyflie 2.x USD asset (NVIDIA Omniverse)
 

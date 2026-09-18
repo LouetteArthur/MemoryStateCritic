@@ -156,14 +156,19 @@ for seed in $SEEDS; do
             # under ABLATION_DONE_DIR after a successful run, so a sweep restarted
             # after a kernel oops resumes where it left off instead of redoing all runs.
             DONE_DIR="${ABLATION_DONE_DIR:-$HOME/logs/ablation_done}"
-            if [ -f "$DONE_DIR/$NAME.done" ]; then
+            # --dry-run prints the FULL grid and deliberately ignores markers, so the
+            # printed plan is a property of the grid alone and not of what this
+            # particular machine happens to have run already. Only note the marker.
+            if [ "$DRY_RUN" = true ]; then
+                if [ -f "$DONE_DIR/$NAME.done" ]; then
+                    echo "  (already complete on this host; a real run would skip it)"
+                fi
+                echo "  $CMD"
+                echo ""
+            elif [ -f "$DONE_DIR/$NAME.done" ]; then
                 echo "  [SKIP] $NAME already complete (marker at $DONE_DIR/$NAME.done)"
                 echo ""
                 continue
-            fi
-            if [ "$DRY_RUN" = true ]; then
-                echo "  $CMD"
-                echo ""
             else
                 # Per-run watchdog: if the run hangs (PXR/USD race) `timeout` kills
                 # it after PER_RUN_TIMEOUT seconds; `|| rc=$?` keeps the sweep going.

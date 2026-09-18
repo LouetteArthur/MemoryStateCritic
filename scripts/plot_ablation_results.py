@@ -75,19 +75,15 @@ _TICK_FORMATTER = mticker.FuncFormatter(_si_step_formatter)
 
 CRITICS = ["Vs", "Vsh", "Vsz", "Vsoa"]
 
-# The (critic, arena) -> seeds grid actually used for Figures 3 and 4, recorded
-# exactly as it was run. Note that open-arena Vsz differs from its Vs / Vsh
-# siblings; that is a fact about how the sweep was executed, not a design
-# choice. V(s,o,a) has three seeds per arena rather than five (paper, Sec. 4.3).
+# The (critic, arena) -> seeds grid used for Figures 3 and 4. Every cell runs
+# the same twenty seeds, so the comparison between critics is paired: 4 critics
+# x 2 arenas x 20 seeds = 160 runs. (The May 2026 submission used a smaller,
+# unbalanced grid of 5/5/5/3 seeds; the camera-ready replaces it entirely.)
+PAPER_SEEDS: list[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123]
 PAPER_GRID: dict[tuple[str, str], set[int]] = {
-    ("Vs", "open"): {1, 5, 7, 42, 123},
-    ("Vsh", "open"): {1, 5, 7, 42, 123},
-    ("Vsz", "open"): {1, 7, 15, 27, 42},
-    ("Vsoa", "open"): {1, 42, 123},
-    ("Vs", "wall"): {1, 5, 15, 42, 123},
-    ("Vsh", "wall"): {1, 5, 15, 42, 123},
-    ("Vsz", "wall"): {1, 5, 15, 42, 123},
-    ("Vsoa", "wall"): {1, 42, 123},
+    (critic, arena): set(PAPER_SEEDS)
+    for critic in ("Vs", "Vsh", "Vsz", "Vsoa")
+    for arena in ("open", "wall")
 }
 
 # Labels follow the paper's notation update: critic-side recurrent encoding is
@@ -274,9 +270,13 @@ def aggregate_metric(
       10% of training on this very metric — and average the surviving
       curves. Band = pointwise min and max of the surviving curves (so the
       shaded region is the spread of the seeds that actually got kept).
-      For N=5 this drops 1 seed from each tail and reports the mean of the
-      middle 3, which matches Agarwal et al.'s recommended robust statistic
-      for the few-run regime.
+      NOTE: this trims *whole seeds*, ranked once on end-of-training score.
+      Agarwal et al. trim the score distribution independently at each
+      evaluation point; use ``"iqm_ci"`` for that estimator.
+
+    - ``"iqm_ci"``: **Agarwal et al.'s IQM as specified** — the 25%-trimmed
+      mean recomputed independently at every evaluation point — with a 95%
+      stratified bootstrap confidence interval over seeds as the band.
     """
     traces: dict[str, list[pd.DataFrame]] = {c: [] for c in CRITICS}
     for rd in data:
@@ -303,7 +303,29 @@ def aggregate_metric(
             continue
         interp = np.stack([np.interp(grid, r["env_step"].to_numpy(), r[metric].to_numpy()) for r in runs])
         n = interp.shape[0]
-        if aggregation == "iqm_range" and n >= 3:
+        if aggregation == "iqm_ci" and n >= 4:
+            # True Agarwal et al. (2021) IQM: trim the score distribution
+            # *independently at every evaluation point*, so a seed may be
+            # trimmed early in training and retained later. Band = 95%
+            # stratified bootstrap CI of the IQM, resampling seeds with
+            # replacement (their recommended interval, not a spread).
+            trim = int(np.floor(n / 4))
+            srt = np.sort(interp, axis=0)
+            iqm_curve = srt[trim : n - trim].mean(axis=0)
+            rng = np.random.default_rng(0)
+            n_boot = 2000
+            idx = rng.integers(0, n, size=(n_boot, n))
+            boot = np.sort(interp[idx], axis=1)[:, trim : n - trim, :].mean(axis=1)
+            lo, hi = np.percentile(boot, [2.5, 97.5], axis=0)
+            out[critic] = {
+                "step": grid,
+                "mean": iqm_curve,
+                "lower": lo,
+                "upper": hi,
+                "n": n,
+                "n_kept": int(n - 2 * trim),
+            }
+        elif aggregation == "iqm_range" and n >= 3:
             # Rank seeds by their final-window mean of this metric, then drop
             # floor(n/4) entire seeds from each tail (Agarwal et al. 2021 §4.3).
             # For n=5 → trim 1 from each tail → 3 seeds kept (mean of middle 3).
@@ -862,6 +884,25 @@ def _iqm_summary(values: np.ndarray) -> tuple[float, float, float, int, int]:
     return float(kept.mean()), float(kept.min()), float(kept.max()), n, int(kept.size)
 
 
+def _iqm_boot_summary(vals: np.ndarray, n_boot: int = 20000, seed: int = 0):
+    """IQM of a set of per-seed scores plus a 95% stratified bootstrap CI.
+
+    This is Agarwal et al. (2021)'s recommended pair for final-performance
+    reporting: the 25%-trimmed mean as the point estimate, and a bootstrap
+    interval over seeds as the uncertainty. Unlike ``_iqm_summary`` the bar is a
+    confidence interval, not the spread of the retained seeds.
+    """
+    v = np.sort(np.asarray(vals, dtype=float))
+    n = v.size
+    trim = int(np.floor(n / 4))
+    iqm = v[trim : n - trim].mean() if n - 2 * trim > 0 else v.mean()
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(n_boot, n))
+    boot = np.sort(v[idx], axis=1)[:, trim : n - trim].mean(axis=1)
+    lo, hi = np.percentile(boot, [2.5, 97.5])
+    return float(iqm), float(lo), float(hi), int(n), int(n - 2 * trim)
+
+
 def plot_win_rate_bars(
     win_df: pd.DataFrame,
     output_dir: Path,
@@ -872,12 +913,14 @@ def plot_win_rate_bars(
         return
     _apply_paper_style()
 
-    if aggregation in ("iqm_range", "top3_range"):
+    if aggregation in ("iqm_range", "iqm_ci", "top3_range"):
         rows = []
         for (critic, arena), grp in win_df.groupby(["critic", "arena"]):
             vals = grp["win_rate"].to_numpy()
             if aggregation == "iqm_range":
                 m, lo, hi, n, n_kept = _iqm_summary(vals)
+            elif aggregation == "iqm_ci":
+                m, lo, hi, n, n_kept = _iqm_boot_summary(vals)
             else:
                 v = np.sort(vals)
                 k = min(3, v.size)
@@ -898,7 +941,7 @@ def plot_win_rate_bars(
     for i, arena in enumerate(ARENAS):
         sub = summary[summary["arena"] == arena].set_index("critic")
         means = np.array([sub.loc[c, "mean"] if c in sub.index else np.nan for c in CRITICS])
-        if aggregation in ("iqm_range", "top3_range"):
+        if aggregation in ("iqm_range", "iqm_ci", "top3_range"):
             lo = np.array([sub.loc[c, "lower"] if c in sub.index else 0.0 for c in CRITICS])
             hi = np.array([sub.loc[c, "upper"] if c in sub.index else 0.0 for c in CRITICS])
             yerr = np.vstack([np.maximum(0.0, means - lo), np.maximum(0.0, hi - means)])
@@ -1022,9 +1065,9 @@ def main() -> None:
         "--paper",
         action="store_true",
         help=(
-            "Reproduce the paper's Figures 3 and 4 exactly: IQM aggregation, "
-            "V(o) excluded, 100K environment timesteps, and the per-critic "
-            "per-arena seed grid in PAPER_GRID. Overrides --aggregation, "
+            "Reproduce the paper's Figures 3 and 4 exactly: IQM with 95% "
+            "bootstrap CIs, V(o) excluded, 100K environment timesteps, and the "
+            "20-seed grid in PAPER_GRID. Overrides --aggregation, "
             "--exclude-critics, --env-timesteps and the --seeds* filters."
         ),
     )
@@ -1125,7 +1168,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--aggregation",
-        choices=["mean_std", "iqm_range", "top3_range"],
+        choices=["mean_std", "iqm_range", "iqm_ci", "top3_range"],
         default="mean_std",
         help=(
             "Per-cell aggregation across seeds. "
@@ -1141,11 +1184,11 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.paper:
-        args.aggregation = "iqm_range"
+        args.aggregation = "iqm_ci"
         args.exclude_critics = "Vo"
         args.env_timesteps = 100_000
         args.seeds = args.seeds_open = args.seeds_wall = None
-        print("--paper: IQM aggregation, V(o) excluded, 100K env timesteps, seeds pinned to PAPER_GRID.")
+        print("--paper: IQM + bootstrap CI, V(o) excluded, 100K env timesteps, seeds pinned to PAPER_GRID.")
 
     cache_hit = bool(args.cache) and Path(args.cache).exists()
     if not cache_hit and not args.entity:

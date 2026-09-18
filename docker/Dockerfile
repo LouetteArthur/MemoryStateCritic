@@ -139,7 +139,10 @@ RUN python3 -m pip install --no-cache-dir \
     "protobuf>=4.25.8,!=5.26.0" \
     moviepy \
     rich \
-    numba
+    numba \
+    # figure regeneration (scripts/plot_ablation_results.py)
+    pandas \
+    seaborn
 
 # ── flatdict 4.0.1 (setup.py uses pkg_resources — must patch before install) ──
 RUN curl -sL "https://files.pythonhosted.org/packages/source/f/flatdict/flatdict-4.0.1.tar.gz" \

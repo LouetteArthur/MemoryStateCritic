@@ -91,11 +91,15 @@ iniconfig==2.3.0
 ipython==9.9.0
 ipython_pygments_lexers==1.1.1
 ipywidgets==8.1.5
--e git+https://github.com/isaac-sim/IsaacLab.git@549768529e3859845794a05b8fd3dfd00edadc9e#egg=isaaclab&subdirectory=source/isaaclab
--e git+https://github.com/isaac-sim/IsaacLab.git@549768529e3859845794a05b8fd3dfd00edadc9e#egg=isaaclab_assets&subdirectory=source/isaaclab_assets
--e git+https://github.com/isaac-sim/IsaacLab.git@549768529e3859845794a05b8fd3dfd00edadc9e#egg=isaaclab_mimic&subdirectory=source/isaaclab_mimic
--e git+https://github.com/isaac-sim/IsaacLab.git@549768529e3859845794a05b8fd3dfd00edadc9e#egg=isaaclab_rl&subdirectory=source/isaaclab_rl
--e git+https://github.com/isaac-sim/IsaacLab.git@549768529e3859845794a05b8fd3dfd00edadc9e#egg=isaaclab_tasks&subdirectory=source/isaaclab_tasks
+# NOTE: the Isaac Lab SHA below is the head of upstream pull request #5725. It is NOT
+# reachable from a default clone -- `pip install` on these five lines will fail. They
+# record the exact commit for provenance; use ./install.sh or docker/, which fetch
+# refs/pull/5725/head explicitly. See REPRODUCING.md section 6b.
+-e git+https://github.com/isaac-sim/IsaacLab.git@d2579eacf8eba0864e2328f3f383a0fdb411e00b#egg=isaaclab&subdirectory=source/isaaclab
+-e git+https://github.com/isaac-sim/IsaacLab.git@d2579eacf8eba0864e2328f3f383a0fdb411e00b#egg=isaaclab_assets&subdirectory=source/isaaclab_assets
+-e git+https://github.com/isaac-sim/IsaacLab.git@d2579eacf8eba0864e2328f3f383a0fdb411e00b#egg=isaaclab_mimic&subdirectory=source/isaaclab_mimic
+-e git+https://github.com/isaac-sim/IsaacLab.git@d2579eacf8eba0864e2328f3f383a0fdb411e00b#egg=isaaclab_rl&subdirectory=source/isaaclab_rl
+-e git+https://github.com/isaac-sim/IsaacLab.git@d2579eacf8eba0864e2328f3f383a0fdb411e00b#egg=isaaclab_tasks&subdirectory=source/isaaclab_tasks
 isaacsim==5.1.0.0
 isaacsim-app==5.1.0.0
 isaacsim-asset==5.1.0.0

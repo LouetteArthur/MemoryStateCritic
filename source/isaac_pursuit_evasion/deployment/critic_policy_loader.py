@@ -1,6 +1,8 @@
 """Lightweight critic-only policy loader for deployment."""
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -137,7 +139,9 @@ def load_critic_from_wandb(
 def load_tracker_cf_rate_critic(
     *,
     device: str | torch.device = "cpu",
-    artifact: str = "kthxulg/ppo_baseline/pretrain_tracker_cf_rate_DR_NoNorm:latest",
+    artifact: str = os.environ.get(
+        "PE_TRACKER_ARTIFACT", "<entity>/<project>/pretrain_tracker_cf_rate_DR_NoNorm:latest"
+    ),
     artifact_file: str | None = None,
     cfg_path: str | Path | None = None,
 ) -> SimpleValueCritic:

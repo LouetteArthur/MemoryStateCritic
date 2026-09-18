@@ -16,6 +16,28 @@ from isaaclab.utils import configclass
 
 from source.isaac_pursuit_evasion.controllers.config import load_controller_config
 
+# ---------------------------------------------------------------------------
+# Pretrained-opponent artifacts
+#
+# These defaults point at the authors' private wandb project, which nobody else
+# can read. They are only reached by the auxiliary tasks (pretrained opponents,
+# warm-starts) -- **no experiment in the paper uses them**; the paper's task,
+# Ablation-vision-vs-trajectories, trains against scripted evaders only.
+#
+# Override with PE_ARTIFACT_ENTITY / PE_ARTIFACT_PROJECT, or pass the artifact
+# explicitly. Leaving them unset yields None, so the caller fails with a clear
+# message instead of an opaque wandb 404.
+# ---------------------------------------------------------------------------
+PE_ARTIFACT_ENTITY = os.environ.get("PE_ARTIFACT_ENTITY")
+PE_ARTIFACT_PROJECT = os.environ.get("PE_ARTIFACT_PROJECT")
+
+
+def _artifact(name: str, alias: str = "latest") -> str | None:
+    """Fully-qualified wandb artifact path, or None when no entity is configured."""
+    if not PE_ARTIFACT_ENTITY or not PE_ARTIFACT_PROJECT:
+        return None
+    return f"{PE_ARTIFACT_ENTITY}/{PE_ARTIFACT_PROJECT}/{name}:{alias}"
+
 # =============================================================================
 # Constants
 # =============================================================================
@@ -523,14 +545,14 @@ def pretrain_rl_rate_vs_circ_lemniscate_cfg(num_envs: int = 512) -> PursuitEvasi
 
 
 def bench_rl_vs_trajectories_cfg(
-    pursuer_artifact: str | None = "kthxulg/ppo_baseline/pretrain_rl_vel_vs_trajectories:latest",
+    pursuer_artifact: str | None = _artifact("pretrain_rl_vel_vs_trajectories"),
     action_mode: str | None = None,
 ) -> PursuitEvasionEnvCfg:
     """Benchmark pre-trained RL pursuer against pre-trained RL evader (artifacts from WandB)."""
 
     cfg = pretrain_rl_vs_trajectories_cfg(action_mode=action_mode)
     cfg.training_agent = ""
-    cfg.wandb_artifact_defaults = {"entity": "kthxulg", "project": "ppo_baseline", "alias": "latest"}
+    cfg.wandb_artifact_defaults = {"entity": PE_ARTIFACT_ENTITY, "project": PE_ARTIFACT_PROJECT, "alias": "latest"}
     rl_kind, _ = _resolve_action_mode(action_mode)
 
     pursuer_payload = {"wandb_artifact": {"artifact": pursuer_artifact}}
@@ -548,7 +570,7 @@ def bench_rl_vs_trajectories_cfg(
 
 
 def bench_rl_rate_vs_trajectories_cfg(
-    pursuer_artifact: str | None = "kthxulg/ppo_baseline/pretrain_rl_bodyrates_vs_trajectories:latest",
+    pursuer_artifact: str | None = _artifact("pretrain_rl_bodyrates_vs_trajectories"),
 ) -> PursuitEvasionEnvCfg:
     """Body-rates variant of bench_rl_vs_trajectories_cfg."""
     return bench_rl_vs_trajectories_cfg(pursuer_artifact=pursuer_artifact, action_mode="rl_bodyrates")
@@ -615,7 +637,7 @@ def _checkpoint_payload(value: Any) -> dict[str, Any]:
 def pretrain_frpn_vs_rl_warmstart_cfg(
     num_envs: int = 1024,
     action_mode: str | None = None,
-    warmstart_checkpoint: str | None = "kthxulg/ppo_baseline/pretrain_frpn_vs_rl_velocity:v25",
+    warmstart_checkpoint: str | None = _artifact("pretrain_frpn_vs_rl_velocity", "v25"),
 ) -> PursuitEvasionEnvCfg:
     """Evader pretrain vs FRPN pursuer but start from a pretrained evader checkpoint."""
 
@@ -818,8 +840,8 @@ def bench_rl_vs_apf_cfg(
 
 def bench_pretrained_rl_vs_rl_cfg(
     num_envs: int = 512,
-    pursuer_artifact: str | None = "kthxulg/ppo_baseline/pretrain_rl_vel_vs_trajectories:latest",
-    evader_artifact: str | None = "kthxulg/ppo_baseline/pretrain_frpn_vs_rl_vel:latest",
+    pursuer_artifact: str | None = _artifact("pretrain_rl_vel_vs_trajectories"),
+    evader_artifact: str | None = _artifact("pretrain_frpn_vs_rl_vel"),
     action_mode: str | None = None,
 ) -> PursuitEvasionEnvCfg:
     """Benchmark pre-trained RL pursuer against pre-trained RL evader (artifacts from WandB)."""
@@ -827,7 +849,7 @@ def bench_pretrained_rl_vs_rl_cfg(
     cfg = get_base_config()
     cfg.scene.num_envs = num_envs
     cfg.training_agent = ""
-    cfg.wandb_artifact_defaults = {"entity": "kthxulg", "project": "ppo_baseline", "alias": "latest"}
+    cfg.wandb_artifact_defaults = {"entity": PE_ARTIFACT_ENTITY, "project": PE_ARTIFACT_PROJECT, "alias": "latest"}
     rl_kind, _ = _resolve_action_mode(action_mode)
 
     pursuer_payload = {"wandb_artifact": {"artifact": pursuer_artifact}} if pursuer_artifact else {}

@@ -76,24 +76,24 @@ The grid exactly as it was run:
 
 | Critic | Paper symbol | Open arena | Wall arena |
 |---|---|---|---|
-| `Vs` | `V(s)` | 1, 5, 7, 42, 123 | 1, 5, 15, 42, 123 |
-| `Vsh` | `V(s,z^c)` | 1, 5, 7, 42, 123 | 1, 5, 15, 42, 123 |
-| `Vsz` | `V(s,z^a)` | 1, 7, 15, 27, 42 | 1, 5, 15, 42, 123 |
-| `Vsoa` | `V(s,o,a)` | 1, 42, 123 | 1, 42, 123 |
+| `Vs` | `V(s)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `Vsh` | `V(s,z^c)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `Vsz` | `V(s,z^a)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `Vsoa` | `V(s,o,a)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
 
-36 runs total. Two things to note, stated plainly:
+**160 runs total**: 4 critics x 2 arenas x 20 seeds, the same seed set in every
+cell, so the comparison between critics is paired.
 
-- The **open-arena `Vsz` seed set differs** from its `Vs` / `Vsh` siblings. This
-  reflects how the sweep was actually executed across machines, not a deliberate
-  design choice.
-- **`V(s,o,a)` has three seeds per arena, not five**, as the paper states in
-  Section 4.3. It never learns a useful policy in either arena, and the variance
-  across those three seeds is small.
+(The May 2026 submission used a smaller, unbalanced grid — five seeds for most
+cells, three for `V(s,o,a)`, and a different open-arena seed set for `Vsz`. The
+camera-ready replaces it entirely; nothing from that grid is reused.)
 
-Aggregation is the interquartile mean (Agarwal et al., 2022): with five seeds,
-the best- and worst-performing seed are dropped (ranked by the final 10% of
-training on the plotted metric) and the middle three are averaged. Shaded bands
-and error bars span the min and max of the three kept seeds.
+Aggregation is the interquartile mean (Agarwal et al., 2022), recomputed
+**independently at each evaluation point**: at every point the best and worst
+quartile of seeds are discarded and the middle ten averaged. Shaded bands and
+error bars are **95% stratified bootstrap confidence intervals** over seeds
+(20,000 resamples), which is the interval Agarwal et al. recommend — not the
+spread of the retained seeds.
 
 ---
 
@@ -103,7 +103,7 @@ and error bars span the min and max of the three kept seeds.
 # Preview the full 36-run plan without launching anything
 ./scripts/run_ablation.sh --dry-run
 
-# Run everything (sequential; ~5.5 h/run on an RTX 4090 → ~7 GPU-days)
+# Run everything (sequential; ~5.5 h/run on an RTX 4090 → ~37 GPU-days)
 WANDB_ENTITY=<your-entity> ./scripts/run_ablation.sh
 
 # Split across machines
@@ -143,7 +143,7 @@ ignores those markers.
 
 ## 5. Regenerating the figures
 
-The plotted series for all 36 runs ship in `figures/paper/runs.pkl`, so the
+The plotted series for all 160 runs ship in `figures/paper/runs.pkl`, so the
 paper's figures regenerate **without a wandb account**:
 
 ```bash
@@ -180,7 +180,7 @@ It warns about any cell where runs are missing.
 ## 6. Environment
 
 The experiments ran on **Isaac Sim 5.1.0** with Isaac Lab pinned at commit
-`5497685`, CUDA 12.8, Python 3.11. `./install.sh` builds this environment;
+`d2579ea`, CUDA 12.8, Python 3.11. `./install.sh` builds this environment;
 `requirements-freeze.txt` records the exact package set that produced the
 results.
 
@@ -255,9 +255,11 @@ set (no editable install pointing back at a development checkout):
 - **Figures.** `--paper --cache figures/paper/runs.pkl` regenerates
   `termination_summary.csv` and `win_rate_summary.csv` byte-identically to the
   shipped versions, with no wandb account.
-- **Plan.** `scripts/run_ablation.sh --dry-run` emits 36 commands, all at
+- **Plan.** `scripts/reproduce_paper.sh --dry-run` emits 160 commands, all at
   `--num_envs=512 --total_frames=51200000`, wall runs carrying
-  `--enable-obstacles --discount-factor=0.999`.
+  `--enable-obstacles --discount-factor=0.999`. (Plain
+  `scripts/run_ablation.sh --dry-run` emits 10 — five critics x two arenas at
+  its single default seed; it is the per-cell launcher, not the paper grid.)
 - **Training.** `Vsz` and `Vsh`, open arena, seed 42, 512 envs, run for 30,000
   of the paper's 100,000 environment timesteps (~1 h each).
 - **Architecture, from the trained checkpoints.** The memory-state critic is an
@@ -273,6 +275,49 @@ set (no editable install pointing back at a development checkout):
   and crossed return 0 at 2,100 timesteps versus 19,800 for `Vsh`.
 
 One seed is not the paper's evidence — Figures 3 and 4 are interquartile means
-over five seeds, and single runs are noisy early in training. These checks
+over twenty seeds, and single runs are noisy early in training. These checks
 establish that the released tree runs and behaves as described, not that a
 single re-run rederives the paper's aggregates.
+
+---
+
+## 9. Known limitations
+
+Stated here rather than left for a reader to discover.
+
+- **Camera field-of-view gate.** The visibility flag `v_t` in the reward, and the
+  corresponding flag in the privileged state, gate on the camera's forward
+  half-space rather than on the rendered 120-degree frame
+  (`pursuit_evasion_env.py`, `_K_RHOANGLE`): the spawn config is a
+  `PinholeCameraCfg`, which has no `fisheye_max_fov`, so the lookup falls back to
+  180 degrees. The occlusion test is unaffected and correct. The gate is
+  identical for all four critics, so the comparison in the paper is unaffected,
+  but a reader reproducing the reward should know the implemented gate is wider
+  than the rendered frame.
+
+- **Termination-reason attribution.** `_get_dones` assigns one reason per episode
+  by a fixed priority. When several conditions hold on the same step -- a capture
+  on the final step, or a capture simultaneous with a wall contact -- the episode
+  is attributed to the later-assigned reason, so capture is slightly
+  under-counted relative to the crash and timeout outcomes. Win-rate *totals*
+  (capture + evader out-of-bounds + evader wall) are unaffected in the common
+  cases; the per-reason breakdown in Figure 4 is. The convention is the same for
+  every critic. Measured timeout rate in the wall arena is 0.000, so the
+  capture/timeout collision does not arise there.
+
+- **Time-limit confound.** Episodes are 250 steps, `time_limit_bootstrap` is
+  false, and the remaining time is not part of the 64-dimensional privileged
+  state. A recurrent critic can count steps from its memory; a state-only critic
+  cannot. Part of the measured gap between `V(s)` and the recurrent critics may
+  therefore reflect time-awareness rather than history aliasing.
+
+- **Unused code.** The task registry exposes one task,
+  `Ablation-vision-vs-trajectories`. `pursuit_evasion_cfg.py` still defines many
+  factory functions (`pretrain_*`, `bench_*`, `amspb_*`) that nothing registers,
+  and `deployment/` is retained because the paper's import path reaches it. They
+  are inherited from the parent repository and are not part of this experiment.
+
+- **Pretrained-opponent artifacts.** The auxiliary tasks referenced wandb
+  artifacts in a private project. They now resolve from `PE_ARTIFACT_ENTITY` /
+  `PE_ARTIFACT_PROJECT` and are `None` when unset. No experiment in the paper
+  uses them.

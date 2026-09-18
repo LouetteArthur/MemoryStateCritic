@@ -162,6 +162,13 @@ class PursuitEvasionEnv(DirectRLEnv):
             self._frustum_viz = None
             self._K_RHOANGLE = torch.pi
 
+        # Must precede super().__init__(): it calls _setup_scene(), which reads
+        # this attribute when the evader is the visual ball (the dataclass
+        # default). Assigning it after super() left every such task dying with
+        # AttributeError; the paper's ablation task sets use_visual_ball_evader
+        # = False, which is why it went unnoticed.
+        self._wall_cfg_for_trajectories = self._build_wall_cfg_for_trajectories(cfg)
+
         super().__init__(cfg, **kwargs)
 
         self._pursuer_camera = self.scene.sensors.get("pursuer_camera") if self.cfg.enable_cameras else None
@@ -320,7 +327,6 @@ class PursuitEvasionEnv(DirectRLEnv):
             "pid_posvel_loop_rate_hz": float(self.cfg.pid_posvel_loop_rate_hz),
         }
         self._init_domain_randomization()
-        self._wall_cfg_for_trajectories = self._build_wall_cfg_for_trajectories()
         self.pursuer_manager = self._maybe_create_manager(
             agent="pursuer",
             assignment=self._pursuer_controller_assignment,
@@ -1835,25 +1841,28 @@ class PursuitEvasionEnv(DirectRLEnv):
             wall_cfg=self._wall_cfg_for_trajectories,
         )
 
-    def _build_wall_cfg_for_trajectories(self) -> WallConfig | None:
+    @staticmethod
+    def _build_wall_cfg_for_trajectories(cfg) -> WallConfig | None:
         """Build a WallConfig describing the obstacle wall, or None when no wall exists.
 
-        Derived from cfg so it is available before the scene spawn. Geometry must
-        stay in sync with `_spawn_obstacle_wall`.
+        Takes `cfg` explicitly and is static because it must run *before*
+        `super().__init__()` — which is what sets `self.cfg` — since
+        `_setup_scene()` consumes the result. Geometry must stay in sync with
+        `_spawn_obstacle_wall`.
         """
-        if not self.cfg.enable_obstacles:
+        if not cfg.enable_obstacles:
             return None
-        thickness = float(self.cfg.obstacle_wall_thickness)
-        gap = float(self.cfg.obstacle_gap_size)
+        thickness = float(cfg.obstacle_wall_thickness)
+        gap = float(cfg.obstacle_gap_size)
         half_gap = gap / 2.0
-        _, y_min, _ = self.cfg.arena_min
-        _, y_max, _ = self.cfg.arena_max
+        _, y_min, _ = cfg.arena_min
+        _, y_max, _ = cfg.arena_max
         wall_y_start = float(y_min) + half_gap
         wall_y_end = float(y_max) - half_gap
         return WallConfig(
             half_thickness=thickness / 2.0,
             y_range=(wall_y_start, wall_y_end),
-            clearance=float(self.cfg.obstacle_drone_clearance),
+            clearance=float(cfg.obstacle_drone_clearance),
         )
 
     def _build_training_action_wrapper(self, agent: Literal["pursuer", "evader"]):

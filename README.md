@@ -1,5 +1,12 @@
 # Memory-State Critic — reproduction code
 
+<https://github.com/LouetteArthur/MemoryStateCritic>
+
+```bash
+git clone https://github.com/LouetteArthur/MemoryStateCritic.git
+cd MemoryStateCritic
+```
+
 Companion code for **"Memory-State Critic for Asymmetric Actor-Critic with Application to
 Vision-Based Pursuit-Evasion"**. It reproduces Experiment 1: a single-agent, vision-based
 pursuit-evasion POMDP (a Crazyflie pursuer learns to catch an evader drawn from a fixed
@@ -25,9 +32,9 @@ source/isaac_pursuit_evasion/           # editable package
 source/third_parties/skrl/               # vendored skrl fork
 scripts/
   skrl/train.py  skrl/play.py            # train / visualize
-  run_ablation.sh                        # the 5 critics x 2 arenas experiment
-  run_exp1_extra_seeds.sh                # additional seeds
-  plot_ablation_results.py               # regenerate the paper figures (mean/IQM over seeds)
+  run_ablation.sh                        # the critic x arena experiment
+  reproduce_paper.sh                     # the paper's exact critic x arena x seed grid
+  plot_ablation_results.py               # regenerate the paper figures (IQM over seeds)
 ```
 
 ## The critics (paper Table 1 / Fig 2-4)
@@ -68,8 +75,12 @@ the clone.
 ## Reproduce the experiment
 
 ```bash
-# all 5 critics x {open, wall}; the paper uses 5 seeds (open) / 3 seeds (wall)
-OMNI_KIT_ACCEPT_EULA=YES NUM_ENVS=256 ./scripts/run_ablation.sh --seeds "42 123 7 9 21"
+# the paper's exact grid — critics x arenas x seeds, at the paper's settings
+OMNI_KIT_ACCEPT_EULA=YES ./scripts/reproduce_paper.sh
+
+# a subset, at the paper's 512 environments (NUM_ENVS=256 fits 12 GB cards but
+# will not reproduce the reported numbers)
+OMNI_KIT_ACCEPT_EULA=YES ./scripts/run_ablation.sh --arena wall --seeds "1 5 15"
 
 # subsets / inspection
 ./scripts/run_ablation.sh --arena wall --critics "Vs Vsz Vsh"
@@ -93,7 +104,9 @@ OMNI_KIT_ACCEPT_EULA=YES python scripts/skrl/train.py \
 
 - The evader is part of the environment (fixed heuristic pool), so each run is a
   single-agent POMDP — no opponent learning.
-- Compute: 5 critics x 2 arenas x 5 seeds ~ 50 runs of ~1e8 frames each; budget accordingly.
+- Compute: each run is 5.12e7 environment steps, about 4 h on an RTX 4090. The full grid in
+  `REPRODUCING.md` is a few hundred GPU-hours; `run_ablation.sh` writes completion markers so
+  an interrupted sweep resumes where it stopped.
 - Pin the stack: Isaac Sim 5.1.0.0, Isaac Lab @ the commit in `install.sh`, vendored skrl
   in `source/third_parties/skrl`. `requirements-freeze.txt` records the exact Python deps.
 
