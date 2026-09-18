@@ -1,7 +1,13 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Visual-only evader implementation for fast vision training."""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -70,12 +76,12 @@ class VisualBallEvader:
         arena_bounds: torch.Tensor,
         env_origins: torch.Tensor,
         trajectory_type: str = "hover",
-        trajectory_groups: Optional[dict[str, torch.Tensor]] = None,
+        trajectory_groups: dict[str, torch.Tensor] | None = None,
         trajectory_horizon: int = 1000,
         dt: float = 0.02,
         radius: float = 0.075,
         color: tuple = (1.0, 0.0, 0.0),
-        wall_cfg: Optional[WallConfig] = None,
+        wall_cfg: WallConfig | None = None,
     ):
         """Initialize the visual ball evader.
 
@@ -126,7 +132,7 @@ class VisualBallEvader:
     def _init_trajectory_groups(
         self,
         trajectory_type: str,
-        trajectory_groups: Optional[dict[str, torch.Tensor]],
+        trajectory_groups: dict[str, torch.Tensor] | None,
     ) -> None:
         """Initialize trajectory managers and env group mappings."""
         arena_min = self.arena_bounds[:, 0]
@@ -243,17 +249,13 @@ class VisualBallEvader:
             # Create semantic type attribute
             type_attr = prim.GetAttribute("semantics:Semantics:params:semanticType")
             if not type_attr:
-                type_attr = prim.CreateAttribute(
-                    "semantics:Semantics:params:semanticType", Sdf.ValueTypeNames.String
-                )
+                type_attr = prim.CreateAttribute("semantics:Semantics:params:semanticType", Sdf.ValueTypeNames.String)
             type_attr.Set("class")
 
             # Create semantic data attribute
             data_attr = prim.GetAttribute("semantics:Semantics:params:semanticData")
             if not data_attr:
-                data_attr = prim.CreateAttribute(
-                    "semantics:Semantics:params:semanticData", Sdf.ValueTypeNames.String
-                )
+                data_attr = prim.CreateAttribute("semantics:Semantics:params:semanticData", Sdf.ValueTypeNames.String)
             data_attr.Set(label)
         except Exception as e:
             print(f"Warning: Could not apply semantic label '{label}' to {prim.GetPath()}: {e}")
@@ -281,7 +283,7 @@ class VisualBallEvader:
         self._sphere_xforms = []
 
         # Create parent xform for organization
-        parent_xform = UsdGeom.Xform.Define(stage, prim_path)
+        UsdGeom.Xform.Define(stage, prim_path)
 
         # Create a shared material for all spheres
         material_path = f"{prim_path}/evader_material"

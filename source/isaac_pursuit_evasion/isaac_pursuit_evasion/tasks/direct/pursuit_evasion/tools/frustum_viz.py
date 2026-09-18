@@ -1,6 +1,11 @@
-import math
-import torch
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
+import math
+
+import torch
 from isaaclab.utils.math import matrix_from_quat
 
 
@@ -12,6 +17,7 @@ class FrustumVisualizer:
         self.debug = None
         if enabled:
             from isaacsim.util.debug_draw import _debug_draw
+
             self.debug = _debug_draw.acquire_debug_draw_interface()
         self.device = device
         self.length = length
@@ -21,7 +27,9 @@ class FrustumVisualizer:
         spawn = cam_cfg.spawn
         if hasattr(spawn, "focal_length"):
             fov_x = 2.0 * math.atan(spawn.horizontal_aperture / (2.0 * spawn.focal_length))
-            v_ap = getattr(spawn, "vertical_aperture", None) or (spawn.horizontal_aperture * cam_cfg.height / cam_cfg.width)
+            v_ap = getattr(spawn, "vertical_aperture", None) or (
+                spawn.horizontal_aperture * cam_cfg.height / cam_cfg.width
+            )
             fov_y = 2.0 * math.atan(v_ap / (2.0 * spawn.focal_length))
         else:
             fov = getattr(spawn, "fisheye_max_fov", 180.0)

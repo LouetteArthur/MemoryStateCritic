@@ -1,8 +1,14 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Episode-level stats tracking for pursuit-evasion tasks."""
+
 from __future__ import annotations
 
 import logging
-from typing import Dict, Iterable
+from collections.abc import Iterable
 
 import torch
 
@@ -30,9 +36,7 @@ class PursuitEvasionStatsTracker:
 
         self.episode_reward_sums: dict[str, dict[str, torch.Tensor]] = {agent: {} for agent in self.agents}
         speed_keys = ("linear", "angular", "acceleration")
-        self.speed_stats = {
-            self.speed_agent: {key: self._create_speed_tracker() for key in speed_keys}
-        }
+        self.speed_stats = {self.speed_agent: {key: self._create_speed_tracker() for key in speed_keys}}
         self.prev_lin_vel = {self.speed_agent: torch.zeros(self.num_envs, 3, device=self.device)}
         self.rho_stats = {
             agent: {
@@ -233,9 +237,7 @@ class PursuitEvasionStatsTracker:
             n_h = int(h_mask.sum().item())
             if n_h == 0:
                 continue
-            entries[f"Heuristic/{h_name}/episodes"] = torch.tensor(
-                float(n_h), device=self.device, dtype=torch.float32
-            )
+            entries[f"Heuristic/{h_name}/episodes"] = torch.tensor(float(n_h), device=self.device, dtype=torch.float32)
             for r_idx, r_label in self._done_reason_labels.items():
                 if r_idx == 0:
                     continue
@@ -385,11 +387,7 @@ class PursuitEvasionStatsTracker:
 
         try:
             # Build data matrix: rows = reasons, cols = windows
-            labels = [
-                lbl
-                for idx, lbl in sorted(self._done_reason_labels.items())
-                if idx != 0
-            ]
+            labels = [lbl for idx, lbl in sorted(self._done_reason_labels.items()) if idx != 0]
             n_windows = len(self._term_rate_history)
             data = np.zeros((len(labels), n_windows))
             x_ticks = []

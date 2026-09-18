@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Custom skrl Runner for isaac_pursuit_evasion.
 
 Subclasses the upstream ``skrl.utils.runner.torch.Runner`` and extends it with:
@@ -20,8 +25,8 @@ copy can stay pristine and be upgraded without merge conflicts.
 """
 
 import copy
-from typing import Any
 from collections.abc import Mapping
+from typing import Any
 
 from skrl import logger
 from skrl.agents.torch import Agent
@@ -54,7 +59,9 @@ class CustomRunner(Runner):
 
             return gaussian_cnn_rnn_model
         if lname == "gaussiancnngruflatmixin":
-            from isaac_pursuit_evasion.skrl_ext.models import gaussian_cnn_rnn_flat_model
+            from isaac_pursuit_evasion.skrl_ext.models import (
+                gaussian_cnn_rnn_flat_model,
+            )
 
             return gaussian_cnn_rnn_flat_model
         if lname in ("vshcriticmixin", "szcriticmixin"):
@@ -74,10 +81,14 @@ class CustomRunner(Runner):
 
             return PPO_ASYM_DEFAULT_CONFIG if "default_config" in lname else PPO_ASYM
         if lname in [
-            "ppo_rnn_vsh", "ppo_rnn_vsh_default_config",
-            "ppo_rnn_sz", "ppo_rnn_sz_default_config",
-            "ppo_rnn_sh", "ppo_rnn_sh_default_config",
-            "ppo_rnn_asym", "ppo_rnn_asym_default_config",
+            "ppo_rnn_vsh",
+            "ppo_rnn_vsh_default_config",
+            "ppo_rnn_sz",
+            "ppo_rnn_sz_default_config",
+            "ppo_rnn_sh",
+            "ppo_rnn_sh_default_config",
+            "ppo_rnn_asym",
+            "ppo_rnn_asym_default_config",
         ]:
             from isaac_pursuit_evasion.skrl_ext.agents import (
                 PPO_RNN_VSH,
@@ -312,7 +323,7 @@ class CustomRunner(Runner):
         # the slot defaults to self.observation_space (actor obs 8196) and add_samples crashes
         # on critic states of size 8260.
         state_space = state_spaces[agent_id]
-        if agent_cfg.get("critic_state_preprocessor_kwargs", None) is None:
+        if agent_cfg.get("critic_state_preprocessor_kwargs") is None:
             agent_cfg["critic_state_preprocessor_kwargs"] = {}
         invalid_state_space = state_space is None
         if not invalid_state_space and isinstance(state_space, (int, float)):

@@ -1,8 +1,15 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Utilities for extracting skrl running scaler stats from checkpoints."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 import torch
 
@@ -86,9 +93,7 @@ def _extract_preprocessor_state(payload: Mapping[str, Any], key: str) -> Mapping
     if filtered:
         return filtered
     if isinstance(agent_state, Mapping):
-        filtered = {
-            k[len(prefix) :]: v for k, v in agent_state.items() if isinstance(k, str) and k.startswith(prefix)
-        }
+        filtered = {k[len(prefix) :]: v for k, v in agent_state.items() if isinstance(k, str) and k.startswith(prefix)}
         if filtered:
             return filtered
     return None

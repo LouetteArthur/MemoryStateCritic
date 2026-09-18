@@ -1,14 +1,20 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import torch
 
 # Rate profiles implementations
 
+
 def betaflight_rate_profile(
-    rc_input,                         # shape: [N, 3]
+    rc_input,  # shape: [N, 3]
     rc_rate=torch.tensor([1.55, 1.55, 1.50]),
     super_rate=torch.tensor([0.73, 0.73, 0.73]),
     rc_expo=torch.tensor([0.30, 0.30, 0.30]),
     super_expo_active=True,
-    limit=torch.tensor([2000.0, 2000.0, 2000.0])
+    limit=torch.tensor([2000.0, 2000.0, 2000.0]),
 ):
     """
     Fully vectorized Betaflight rate profile over [N, 3] RC input.
@@ -37,12 +43,13 @@ def betaflight_rate_profile(
     angular_vel = torch.clamp(angular_vel, -limit, limit)
     return angular_vel  # [N, 3]
 
+
 def raceflight_rate_profile(
-    rc_input,                         # shape: [N, 3]
+    rc_input,  # shape: [N, 3]
     rc_rate=torch.tensor([1.0, 1.0, 1.0]),
     expo=torch.tensor([0.4, 0.4, 0.4]),
     rate=torch.tensor([0.75, 0.75, 0.75]),
-    limit=torch.tensor([2000.0, 2000.0, 2000.0])
+    limit=torch.tensor([2000.0, 2000.0, 2000.0]),
 ):
     """
     Fully vectorized RaceFlight (FlightOne) rate profile over [N, 3] RC input.
@@ -61,13 +68,14 @@ def raceflight_rate_profile(
 
     return angular_vel  # [N, 3]
 
+
 def actual_rate_profile(
-    rc_input,                         # shape: [N, 3]
+    rc_input,  # shape: [N, 3]
     center_sensitivity=torch.tensor([1.0, 1.0, 1.0]),
     max_vel=torch.tensor([1100.0, 1100.0, 1100.0]),
     expo=torch.tensor([0.3, 0.3, 0.3]),
     acro_rate=torch.tensor([1.0, 1.0, 1.0]),
-    limit=torch.tensor([2000.0, 2000.0, 2000.0])
+    limit=torch.tensor([2000.0, 2000.0, 2000.0]),
 ):
     """
     Fully vectorized Actual rate profile over [N, 3] RC input.
@@ -81,16 +89,19 @@ def actual_rate_profile(
 
     stick = rc_input.abs()
     expo_curve = stick * stick * stick * expo + stick * (1 - expo)
-    angular_vel = torch.sign(rc_input) * (center_sensitivity + (1 - center_sensitivity) * expo_curve) * max_vel * acro_rate
+    angular_vel = (
+        torch.sign(rc_input) * (center_sensitivity + (1 - center_sensitivity) * expo_curve) * max_vel * acro_rate
+    )
 
     angular_vel = torch.clamp(angular_vel, -limit, limit)
     return angular_vel  # [N, 3]
 
+
 def kiss_rate_profile(
-    rc_input,                         # shape: [N, 3]
+    rc_input,  # shape: [N, 3]
     rate=torch.tensor([1.5, 1.5, 1.5]),
     rc_curve=torch.tensor([0.3, 0.3, 0.3]),
-    limit=torch.tensor([2000.0, 2000.0, 2000.0])
+    limit=torch.tensor([2000.0, 2000.0, 2000.0]),
 ):
     """
     Fully vectorized KISS rate profile over [N, 3] RC input.
@@ -108,8 +119,6 @@ def kiss_rate_profile(
     return angular_vel  # [N, 3]
 
 
-import math
-
 # ------------------------------
 # Mixer with your geometry
 # ------------------------------
@@ -118,6 +127,7 @@ class QuadMixer:
     Maps (T, Mx, My, Mz) to rotor angular speeds omega [rad/s] using the
     Crazyflie brushless allocation matrix.
     """
+
     def __init__(self, num_envs, drone_cfg, device="cuda"):
         self.device = device
         self.k_eta = drone_cfg.k_eta.to(device)
@@ -132,12 +142,17 @@ class QuadMixer:
         omega = torch.sqrt(motor_forces / self.k_eta)
         return omega.clamp(self.motor_speed_min, self.motor_speed_max)
 
+
 class PDRateController:
     """Lee geometric controller (attitude error law from integrated rate commands)."""
+
     def __init__(self, num_envs, drone_cfg, device="cuda", dt=0.01):
         self.inertia_matrix = torch.diag_embed(drone_cfg.inertia)
         self.gain_body_rate = torch.tensor([0.25, 0.25, 0.15], device=device) @ self.inertia_matrix.inverse()
-        print(f"[INFO]: Controller gains: roll {self.gain_body_rate[0]:.0f}, pitch {self.gain_body_rate[1]:.0f}, yaw {self.gain_body_rate[2]:.0f}")
+        print(
+            f"[INFO]: Controller gains: roll {self.gain_body_rate[0]:.0f}, pitch {self.gain_body_rate[1]:.0f}, yaw"
+            f" {self.gain_body_rate[2]:.0f}"
+        )
 
     def __call__(self, body_rate: torch.Tensor, body_rate_des: torch.Tensor):
         body_rate_err = torch.clamp(body_rate - body_rate_des, -1, 1)
@@ -148,11 +163,13 @@ class PDRateController:
         M = -self.gain_body_rate * body_rate_err + coriolis
         return M
 
+
 # ------------------------------
 # Wrapper
 # ------------------------------
 class BodyRateToOmega:
     """Controller + mixer wrapper: (body_rate, body_rate_des, thrust) -> omega (rotor speeds)."""
+
     def __init__(self, controller, mixer):
         super().__init__()
         self.controller = controller

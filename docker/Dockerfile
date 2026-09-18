@@ -155,7 +155,7 @@ RUN curl -sL "https://files.pythonhosted.org/packages/source/f/flatdict/flatdict
     && rm -rf /tmp/flatdict /tmp/flatdict.tar.gz
 
 # ── Project entrypoint ────────────────────────────────────────────────────────
-WORKDIR /workspace/IsaacPursuitEvasion
+WORKDIR /workspace/MemoryStateCritic
 
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

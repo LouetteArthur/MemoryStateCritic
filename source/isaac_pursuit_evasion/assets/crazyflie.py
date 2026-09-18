@@ -1,14 +1,18 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Configuration for the Crazyflie 2.x pursuer/evader using Isaac Lab's Nucleus asset."""
 
 import isaaclab.sim as sim_utils
+import torch
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 from isaaclab.sensors import CameraCfg, TiledCameraCfg
 from isaaclab.sim.spawners.sensors.sensors_cfg import PinholeCameraCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.math import matrix_from_quat, quat_apply, quat_mul
-import torch
-
 
 # Use Isaac Lab's Crazyflie from Nucleus
 CRAZYFLIE_USD_PATH = f"{ISAAC_NUCLEUS_DIR}/Robots/Bitcraze/Crazyflie/cf2x.usd"
@@ -126,11 +130,11 @@ def transform_camera_line(
     link_quat = link_quat.view(-1, 4)
     batch = link_pos.shape[0]
 
-    offset_pos = torch.tensor(cam_cfg.offset.pos, device=link_pos.device, dtype=link_pos.dtype).view(1, 3).expand(
-        batch, -1
+    offset_pos = (
+        torch.tensor(cam_cfg.offset.pos, device=link_pos.device, dtype=link_pos.dtype).view(1, 3).expand(batch, -1)
     )
-    offset_quat = torch.tensor(cam_cfg.offset.rot, device=link_pos.device, dtype=link_pos.dtype).view(1, 4).expand(
-        batch, -1
+    offset_quat = (
+        torch.tensor(cam_cfg.offset.rot, device=link_pos.device, dtype=link_pos.dtype).view(1, 4).expand(batch, -1)
     )
     cam_pos_w = link_pos + quat_apply(link_quat, offset_pos)
     cam_quat_w = quat_mul(link_quat, offset_quat)

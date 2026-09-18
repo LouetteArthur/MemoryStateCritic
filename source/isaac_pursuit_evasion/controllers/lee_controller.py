@@ -1,12 +1,15 @@
-from typing import Optional, Tuple
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 
 import torch
-
 from isaaclab.utils import math as math_utils
 
-from .flight_controller import QuadMixer
-from .config import load_controller_config
 from ..dynamics.propellers import Drone_cfg
+from .config import load_controller_config
+from .flight_controller import QuadMixer
 
 
 def _expand_to(tensor: torch.Tensor, reference: torch.Tensor) -> torch.Tensor:
@@ -24,7 +27,7 @@ class LeePositionController:
         num_envs: int,
         drone_cfg: Drone_cfg,
         device: str = "cuda",
-        controller_cfg: Optional[dict] = None,
+        controller_cfg: dict | None = None,
     ) -> None:
         self.device = device
         self.num_envs = num_envs
@@ -43,7 +46,9 @@ class LeePositionController:
         self.k_vel = torch.tensor(controller_cfg["velocity_gain"], device=device, dtype=torch.float32)
         self.k_att = torch.tensor(controller_cfg["attitude_gain"], device=device, dtype=torch.float32)
         self.k_rate = torch.tensor(controller_cfg["angular_rate_gain"], device=device, dtype=torch.float32)
-        self.max_acc = torch.tensor(controller_cfg.get("max_acceleration", float("inf")), device=device, dtype=torch.float32)
+        self.max_acc = torch.tensor(
+            controller_cfg.get("max_acceleration", float("inf")), device=device, dtype=torch.float32
+        )
 
         self.mixer = QuadMixer(num_envs, drone_cfg, device=device)
 
@@ -57,13 +62,13 @@ class LeePositionController:
     def __call__(
         self,
         root_state: torch.Tensor,
-        target_pos: Optional[torch.Tensor] = None,
-        target_vel: Optional[torch.Tensor] = None,
-        target_acc: Optional[torch.Tensor] = None,
-        target_yaw: Optional[torch.Tensor] = None,
-        target_yaw_rate: Optional[torch.Tensor] = None,
+        target_pos: torch.Tensor | None = None,
+        target_vel: torch.Tensor | None = None,
+        target_acc: torch.Tensor | None = None,
+        target_yaw: torch.Tensor | None = None,
+        target_yaw_rate: torch.Tensor | None = None,
         body_rate_input: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         pos, quat, lin_vel, ang_vel = torch.split(root_state, [3, 4, 3, 3], dim=-1)
         if not body_rate_input:
             ang_vel = math_utils.quat_apply_inverse(quat, ang_vel)
@@ -104,7 +109,7 @@ class LeePositionController:
         vel_error = lin_vel - target_vel
 
         force_vector = (
-            + self.k_pos * pos_error
+            +self.k_pos * pos_error
             + self.k_vel * vel_error
             - self.mass * self.gravity * self.g_vec
             - self.mass * target_acc

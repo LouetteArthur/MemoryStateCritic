@@ -20,8 +20,6 @@ Pure-torch tests — no Isaac Sim needed.
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pytest

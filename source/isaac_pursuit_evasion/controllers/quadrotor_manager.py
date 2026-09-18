@@ -1,15 +1,21 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Literal, Mapping, Optional, Sequence
+from typing import Any, Literal
 
 import torch
 import torch.nn as nn
+from isaaclab.assets import Articulation, ArticulationData
 from tensordict import TensorDictBase
 
-from isaaclab.assets import Articulation, ArticulationData
-
+from source.isaac_pursuit_evasion.controllers.config import load_controller_config
 from source.isaac_pursuit_evasion.controllers.evader import CrazyflieAPFEvaderWrapper
 from source.isaac_pursuit_evasion.controllers.pursuer import CrazyflieFRPNPursuerWrapper
 from source.isaac_pursuit_evasion.controllers.rl_controllers import (
@@ -30,7 +36,6 @@ from source.isaac_pursuit_evasion.deployment.critic_policy_loader import (
     load_critic_from_checkpoint,
     load_critic_policy_config,
 )
-from source.isaac_pursuit_evasion.controllers.config import load_controller_config
 from source.isaac_pursuit_evasion.dynamics.propellers import Drone_cfg
 from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import (
     CrazyflieTrajectoryWrapper,
@@ -58,16 +63,16 @@ class QuadrotorManager:
         dt: float,
         num_envs: int,
         total_timesteps: int,
-        controller_assignment: Dict[str, Dict[str, Any]],
+        controller_assignment: dict[str, dict[str, Any]],
         device: str,
         arena_bounds: torch.Tensor,
         env_origins: torch.Tensor,
         obs_dim: int,
         action_dim: int,
-        pid_params: Optional[Mapping[str, Any]] = None,
-        pid_dt: Optional[float] = None,
+        pid_params: Mapping[str, Any] | None = None,
+        pid_dt: float | None = None,
         role: Literal["pursuer", "evader"] = "pursuer",
-        wall_cfg: Optional[WallConfig] = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.robot = robot
         self.drone_cfg = drone_cfg
@@ -84,13 +89,13 @@ class QuadrotorManager:
         self._pid_params = copy.deepcopy(pid_params) if pid_params is not None else None
         self._pid_dt = float(pid_dt) if pid_dt is not None else float(dt)
 
-        self._trajectory: Optional[dict[str, Any]] = None
+        self._trajectory: dict[str, Any] | None = None
         self.prev_action = torch.zeros((num_envs, self._action_dim), device=self.device)
-        self._controllers: list[Dict[str, Any]] = []
+        self._controllers: list[dict[str, Any]] = []
         self._critic_policies: dict[str, nn.Module] = {}
         # Opponent z tracking: maps global env_id → GRU hidden state (last layer)
         self._opp_z_dim: int = 0  # set when a recurrent policy is loaded
-        self._opp_z: Optional[torch.Tensor] = None
+        self._opp_z: torch.Tensor | None = None
         self._recurrent_policies: dict[str, RecurrentActorPolicyCallable] = {}
         self._register_controllers(controller_assignment or {})
         self._global_frame = 0
@@ -178,8 +183,8 @@ class QuadrotorManager:
 
     def compute_action(
         self,
-        adversary_data: Optional[ArticulationData],
-        rl_observations: Optional[Dict[str, TensorDictBase]] = None,
+        adversary_data: ArticulationData | None,
+        rl_observations: dict[str, TensorDictBase] | None = None,
     ) -> torch.Tensor:
         commands = torch.zeros((self.num_envs, 4), device=self.device)
         robot_state = self.robot.data.root_state_w.clone()
@@ -210,7 +215,7 @@ class QuadrotorManager:
                 pursuer_state = adversary_data.root_state_w[env_ids].clone()
                 pursuer_state[..., :3] -= self.env_origins[env_ids]
                 cmd = controller.command(pursuer_state, evader_state)
-                
+
             elif kind in RL_KINDS:
                 if rl_observations is None or entry["name"] not in rl_observations:
                     raise KeyError(f"Missing observations for RL controller '{entry['name']}'.")
@@ -219,7 +224,7 @@ class QuadrotorManager:
                 if entry.get("recurrent") and entry["name"] in self._recurrent_policies:
                     rp = self._recurrent_policies[entry["name"]]
                     if self._opp_z is not None:
-                        self._opp_z[env_ids] = rp.get_z()[:env_ids.numel()]
+                        self._opp_z[env_ids] = rp.get_z()[: env_ids.numel()]
             else:
                 raise KeyError(f"Unsupported controller kind '{kind}'.")
 
@@ -347,11 +352,11 @@ class QuadrotorManager:
         """Return opponent's previous action (all envs)."""
         return self.prev_action
 
-    def get_critic(self, name: str) -> Optional[nn.Module]:
+    def get_critic(self, name: str) -> nn.Module | None:
         return self._critic_policies.get(name)
 
-    def rl_env_assignments(self) -> Dict[str, Dict[str, Any]]:
-        assignments: Dict[str, Dict[str, Any]] = {}
+    def rl_env_assignments(self) -> dict[str, dict[str, Any]]:
+        assignments: dict[str, dict[str, Any]] = {}
         for entry in self._controllers:
             if entry["kind"] not in RL_KINDS:
                 continue
@@ -366,9 +371,9 @@ class QuadrotorManager:
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
-    def _register_controllers(self, controller_assignment: Dict[str, Dict[str, Any]]) -> None:
+    def _register_controllers(self, controller_assignment: dict[str, dict[str, Any]]) -> None:
         occupancy = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        trajectory_entries: list[Dict[str, Any]] = []
+        trajectory_entries: list[dict[str, Any]] = []
 
         for name, cfg in controller_assignment.items():
             cfg = cfg or {}
@@ -381,9 +386,7 @@ class QuadrotorManager:
 
             kind = cfg.get("kind") or _infer_kind(name)
             if kind in TRAJECTORY_TYPES:
-                trajectory_entries.append(
-                    {"name": name, "kind": kind, "env_ids": env_ids, "config": cfg or {} }
-                )
+                trajectory_entries.append({"name": name, "kind": kind, "env_ids": env_ids, "config": cfg or {}})
                 continue
 
             controller, is_recurrent = self._instantiate_controller(name, kind, env_ids, cfg or {})
@@ -399,7 +402,7 @@ class QuadrotorManager:
 
         self._init_trajectory_controllers(trajectory_entries)
 
-    def _resolve_controller_cfg(self, kind: str, cfg: Dict[str, Any]) -> Dict[str, Any] | None:
+    def _resolve_controller_cfg(self, kind: str, cfg: dict[str, Any]) -> dict[str, Any] | None:
         """Return the controller config dict, auto-loading from YAML if not explicitly provided.
 
         If ``cfg["config"]`` is already set it is returned as-is (backward compatible).
@@ -421,7 +424,9 @@ class QuadrotorManager:
             base_cfg.update(overrides)
         return base_cfg
 
-    def _instantiate_controller(self, name: str, kind: str, env_ids: torch.Tensor, cfg: Dict[str, Any]) -> tuple[Any, bool]:
+    def _instantiate_controller(
+        self, name: str, kind: str, env_ids: torch.Tensor, cfg: dict[str, Any]
+    ) -> tuple[Any, bool]:
         """Instantiate a controller. Returns (controller, is_recurrent)."""
         env_count = env_ids.numel()
 
@@ -431,36 +436,42 @@ class QuadrotorManager:
             if controller_cfg:
                 curriculum_cfg = controller_cfg.get("curriculum")
             total_frames = self.total_timesteps
-            return CrazyflieFRPNPursuerWrapper(
-                num_envs=env_count,
-                drone_cfg=self.drone_cfg,
-                dt=self.dt,
-                pid_dt=self._pid_dt,
-                total_frames=total_frames,
-                device=str(self.device),
-                command_heading=bool(cfg.get("command_heading", True)),
-                controller_cfg=controller_cfg,
-                curriculum_cfg=curriculum_cfg,
-                pid_params=self._pid_params,
-                wall_cfg=self.wall_cfg,
-            ), False
+            return (
+                CrazyflieFRPNPursuerWrapper(
+                    num_envs=env_count,
+                    drone_cfg=self.drone_cfg,
+                    dt=self.dt,
+                    pid_dt=self._pid_dt,
+                    total_frames=total_frames,
+                    device=str(self.device),
+                    command_heading=bool(cfg.get("command_heading", True)),
+                    controller_cfg=controller_cfg,
+                    curriculum_cfg=curriculum_cfg,
+                    pid_params=self._pid_params,
+                    wall_cfg=self.wall_cfg,
+                ),
+                False,
+            )
 
         if kind == "apf_evader":
             arena_min = self.arena_bounds[:, 0] if self.arena_bounds is not None else None
             arena_max = self.arena_bounds[:, 1] if self.arena_bounds is not None else None
-            return CrazyflieAPFEvaderWrapper(
-                num_envs=env_count,
-                drone_cfg=self.drone_cfg,
-                dt=self.dt,
-                pid_dt=self._pid_dt,
-                device=str(self.device),
-                command_heading=bool(cfg.get("command_heading", True)),
-                controller_cfg=self._resolve_controller_cfg(kind, cfg),
-                arena_min=arena_min,
-                arena_max=arena_max,
-                pid_params=self._pid_params,
-                wall_cfg=self.wall_cfg,
-            ), False
+            return (
+                CrazyflieAPFEvaderWrapper(
+                    num_envs=env_count,
+                    drone_cfg=self.drone_cfg,
+                    dt=self.dt,
+                    pid_dt=self._pid_dt,
+                    device=str(self.device),
+                    command_heading=bool(cfg.get("command_heading", True)),
+                    controller_cfg=self._resolve_controller_cfg(kind, cfg),
+                    arena_min=arena_min,
+                    arena_max=arena_max,
+                    pid_params=self._pid_params,
+                    wall_cfg=self.wall_cfg,
+                ),
+                False,
+            )
 
         if kind in {"rl_velocity", "rl_policy"}:
             policy, critic, is_recurrent = self._resolve_policy(cfg, label=name, env_count=env_count)
@@ -506,7 +517,7 @@ class QuadrotorManager:
 
         raise ValueError(f"Unknown controller kind '{kind}'.")
 
-    def _init_trajectory_controllers(self, entries: list[Dict[str, Any]]) -> None:
+    def _init_trajectory_controllers(self, entries: list[dict[str, Any]]) -> None:
         if not entries:
             self._trajectory = None
             return
@@ -588,8 +599,8 @@ class QuadrotorManager:
         traj["yaw"][local_ids] = 0.0
 
     def _resolve_policy(
-        self, cfg: Dict[str, Any], label: str | None = None, env_count: int = 0
-    ) -> tuple[Any, Optional[nn.Module], bool]:
+        self, cfg: dict[str, Any], label: str | None = None, env_count: int = 0
+    ) -> tuple[Any, nn.Module | None, bool]:
         """Resolve policy from config, returning (policy, critic, is_recurrent)."""
         cfg = cfg or {}
         if "policy" in cfg:
@@ -671,14 +682,14 @@ class QuadrotorManager:
             return load_critic_policy_config()
         raise TypeError(f"Unsupported critic_cfg type: {type(critic_cfg)}")
 
-    def _resolve_checkpoint(self, cfg: Dict[str, Any]) -> str | None:
+    def _resolve_checkpoint(self, cfg: dict[str, Any]) -> str | None:
         if "wandb_artifact" in cfg:
             return _download_wandb_artifact(cfg["wandb_artifact"])
         checkpoint = cfg.get("checkpoint") or cfg.get("path")
         return str(checkpoint) if checkpoint is not None else None
 
 
-def _download_wandb_artifact(cfg: Dict[str, Any]) -> str:
+def _download_wandb_artifact(cfg: dict[str, Any]) -> str:
     """Download a checkpoint from Weights & Biases and return the local file path."""
     try:
         import wandb  # type: ignore
@@ -712,6 +723,7 @@ def _normalize_env_ids(env_ids: Any, device: torch.device, num_envs: int) -> tor
     tensor = tensor.clamp(min=0, max=num_envs - 1)
     tensor, _ = torch.sort(torch.unique(tensor))
     return tensor
+
 
 def _infer_kind(name: str) -> str:
     lowered = name.lower()

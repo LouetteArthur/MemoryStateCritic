@@ -1,11 +1,15 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from typing import Sequence
 
 import gymnasium as gym
 import torch
-
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.scene import InteractiveSceneCfg
@@ -13,10 +17,17 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 
-from source.isaac_pursuit_evasion.assets.crazyflie_brushless import CrazyflieBrushlessPursuer
-from source.isaac_pursuit_evasion.controllers.crazy_controller import CrazyfliePIDController
+from source.isaac_pursuit_evasion.assets.crazyflie_brushless import (
+    CrazyflieBrushlessPursuer,
+)
+from source.isaac_pursuit_evasion.controllers.crazy_controller import (
+    CrazyfliePIDController,
+)
 from source.isaac_pursuit_evasion.dynamics.propellers import Drone_cfg, Propellers
-from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import TrajectoryBatchManager, TrajectorySpec
+from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import (
+    TrajectoryBatchManager,
+    TrajectorySpec,
+)
 
 
 @dataclass
@@ -170,8 +181,8 @@ class TrajectoryTrackingEnv(DirectRLEnv):
     # -------------------------------------------------------------------------
 
     def _setup_scene(self) -> None:
-        from isaaclab.assets import Articulation
         import isaaclab.sim as sim_utils
+        from isaaclab.assets import Articulation
 
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
@@ -219,14 +230,13 @@ class TrajectoryTrackingEnv(DirectRLEnv):
             dim=-1,
         )
         return {"policy": obs_policy}
-    
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         timeout = self.episode_length_buf >= self.max_episode_length
         terminated = self._latest_collision_mask.clone()
         truncated = timeout & (~terminated)
         return terminated, truncated
-    
+
     def _get_rewards(self):
         pos_error_vec = self._robot.data.root_pos_w - self._current_target_pos
         position_error = torch.norm(pos_error_vec, dim=-1)
@@ -387,7 +397,9 @@ class TrajectoryTrackingEnv(DirectRLEnv):
             markers={
                 "goal": sim_utils.SphereCfg(
                     radius=0.06,
-                    visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.9, 0.1), emissive_color=(0.8, 0.7, 0.1)),
+                    visual_material=sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(1.0, 0.9, 0.1), emissive_color=(0.8, 0.7, 0.1)
+                    ),
                 )
             },
         )
@@ -410,7 +422,6 @@ class TrajectoryTrackingEnv(DirectRLEnv):
 
         if self._target_markers is not None:
             self._target_markers.visualize(translations=self._current_target_pos)
-
 
     def _velocity_marker_data(self, vectors: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         orientations = self._vectors_to_quat(vectors)

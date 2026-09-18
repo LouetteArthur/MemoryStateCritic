@@ -1,5 +1,13 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import torch
-from source.isaac_pursuit_evasion.controllers.flight_controller import betaflight_rate_profile
+
+from source.isaac_pursuit_evasion.controllers.flight_controller import (
+    betaflight_rate_profile,
+)
 
 if __name__ == "__main__":
     # Your parameters

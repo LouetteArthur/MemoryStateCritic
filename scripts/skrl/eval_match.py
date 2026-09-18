@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Evaluate a pursuer checkpoint against an evader for N episodes.
 
 Called by run_tournament.py to evaluate one (pursuer, evader) match.
@@ -38,7 +43,9 @@ parser.add_argument(
     required=True,
     help="Evader type: hover, circular, lemniscate, frpn, or checkpoint (uses --evader-checkpoint).",
 )
-parser.add_argument("--evader-checkpoint", type=str, default=None, help="Path to evader .pt checkpoint (if evader-type=checkpoint)")
+parser.add_argument(
+    "--evader-checkpoint", type=str, default=None, help="Path to evader .pt checkpoint (if evader-type=checkpoint)"
+)
 parser.add_argument(
     "--evader-rl-kind",
     type=str,
@@ -52,7 +59,10 @@ parser.add_argument("--seed", type=int, default=42, help="Random seed")
 parser.add_argument("--sensor-mode", type=str, default="segmap", choices=["depth", "segmap", "both"])
 parser.add_argument("--enable-obstacles", action="store_true", default=False, help="Enable wall map")
 parser.add_argument(
-    "--ml_framework", type=str, default="torch", choices=["torch", "jax", "jax-numpy"],
+    "--ml_framework",
+    type=str,
+    default="torch",
+    choices=["torch", "jax", "jax-numpy"],
 )
 
 AppLauncher.add_app_launcher_args(parser)
@@ -65,13 +75,18 @@ simulation_app = app_launcher.app
 
 """Rest everything follows."""
 
-import torch
 import gymnasium as gym
-
-from isaac_pursuit_evasion.skrl_ext import CustomRunner as Runner
-from isaaclab.envs import DirectRLEnvCfg, DirectMARLEnv, DirectMARLEnvCfg, ManagerBasedRLEnvCfg, multi_agent_to_single_agent
 import isaac_pursuit_evasion.tasks  # noqa: F401
 import isaaclab_tasks  # noqa: F401
+import torch
+from isaac_pursuit_evasion.skrl_ext import CustomRunner as Runner
+from isaaclab.envs import (
+    DirectMARLEnv,
+    DirectMARLEnvCfg,
+    DirectRLEnvCfg,
+    ManagerBasedRLEnvCfg,
+    multi_agent_to_single_agent,
+)
 from isaaclab_rl.skrl import SkrlVecEnvWrapper
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
@@ -152,19 +167,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, expe
     runner.agent.set_running_mode("eval")
 
     # Run episodes and count outcomes
-    num_envs = args_cli.num_envs
     target_episodes = args_cli.episodes
     completed_episodes = 0
 
     # Outcome counters
     counts = {
-        "captures": 0,                # reason 1
-        "pursuer_oob": 0,             # reason 3
-        "evader_oob": 0,              # reason 4
-        "timeouts": 0,                # reason 5
-        "invalid": 0,                 # reason 6
+        "captures": 0,  # reason 1
+        "pursuer_oob": 0,  # reason 3
+        "evader_oob": 0,  # reason 4
+        "timeouts": 0,  # reason 5
+        "invalid": 0,  # reason 6
         "pursuer_wall_collision": 0,  # reason 7
-        "evader_wall_collision": 0,   # reason 8
+        "evader_wall_collision": 0,  # reason 8
     }
 
     reason_to_key = {

@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Gains tuned for Crazyflie brushless
 k_pursuer: 0.8
 k_wall: 2.0

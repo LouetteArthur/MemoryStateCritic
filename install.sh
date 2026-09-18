@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — one-shot environment setup for IsaacPursuitEvasion
+# install.sh — one-shot environment setup for MemoryStateCritic
 #
 # Requirements:
 #   • Ubuntu 22.04 or 24.04

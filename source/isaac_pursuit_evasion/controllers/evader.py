@@ -1,16 +1,21 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
-
 from isaaclab.utils import math as math_utils
 
-from .config import load_controller_config
-from .lee_controller import drone_cfg_name
-from .crazy_controller import build_crazyflie_pid
+from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import (
+    WallConfig,
+)
+
 from ..dynamics.propellers import Drone_cfg
-from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import WallConfig
+from .config import load_controller_config
+from .crazy_controller import build_crazyflie_pid
+from .lee_controller import drone_cfg_name
 
 
 class APFEvaderController:
@@ -23,11 +28,11 @@ class APFEvaderController:
         dt: float,
         device: str = "cuda",
         command_heading: bool = False,
-        controller_cfg: Optional[dict] = None,
-        lee_controller_cfg: Optional[dict] = None,
-        arena_min: Optional[torch.Tensor] = None,
-        arena_max: Optional[torch.Tensor] = None,
-        wall_cfg: Optional[WallConfig] = None,
+        controller_cfg: dict | None = None,
+        lee_controller_cfg: dict | None = None,
+        arena_min: torch.Tensor | None = None,
+        arena_max: torch.Tensor | None = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.device = device
         self.num_envs = num_envs
@@ -81,7 +86,7 @@ class APFEvaderController:
         # Central obstacle wall (optional)
         self.wall_cfg = wall_cfg
 
-    def to(self, device: str) -> "APFEvaderController":
+    def to(self, device: str) -> APFEvaderController:
         self.device = device
         self.arena_min = self.arena_min.to(device)
         self.arena_max = self.arena_max.to(device)
@@ -157,11 +162,11 @@ class CrazyflieAPFEvaderWrapper:
         pid_dt: float | None = None,
         device: str = "cuda",
         command_heading: bool = False,
-        controller_cfg: Optional[dict] = None,
-        arena_min: Optional[torch.Tensor] = None,
-        arena_max: Optional[torch.Tensor] = None,
-        pid_params: Optional[dict] = None,
-        wall_cfg: Optional[WallConfig] = None,
+        controller_cfg: dict | None = None,
+        arena_min: torch.Tensor | None = None,
+        arena_max: torch.Tensor | None = None,
+        pid_params: dict | None = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.device = torch.device(device)
         self.controller = APFEvaderController(

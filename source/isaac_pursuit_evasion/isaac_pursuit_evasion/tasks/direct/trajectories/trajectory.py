@@ -1,14 +1,20 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Type
 
 import torch
 import torch.distributions as D
-
 from isaaclab.utils import math as math_utils
 
-from source.isaac_pursuit_evasion.controllers.crazy_controller import build_crazyflie_pid
+from source.isaac_pursuit_evasion.controllers.crazy_controller import (
+    build_crazyflie_pid,
+)
 from source.isaac_pursuit_evasion.dynamics.propellers import Drone_cfg
 
 
@@ -21,7 +27,7 @@ class WallConfig:
     """
 
     half_thickness: float
-    y_range: Tuple[float, float]
+    y_range: tuple[float, float]
     clearance: float
     cross_prob: float = 0.4
     max_resample_iters: int = 10
@@ -33,7 +39,7 @@ def scale_time(t: torch.Tensor, a: float = 1.0) -> torch.Tensor:
     return t / (1 + 1 / (a * torch.abs(t) + 1e-6))
 
 
-def compute_derivatives(positions: torch.Tensor, dt: float) -> Tuple[torch.Tensor, torch.Tensor]:
+def compute_derivatives(positions: torch.Tensor, dt: float) -> tuple[torch.Tensor, torch.Tensor]:
     """Central finite differences for velocity and acceleration."""
     vel = torch.gradient(positions, spacing=(dt,), dim=0)[0]
     acc = torch.gradient(vel, spacing=(dt,), dim=0)[0]
@@ -41,15 +47,15 @@ def compute_derivatives(positions: torch.Tensor, dt: float) -> Tuple[torch.Tenso
 
 
 class TrajectoryRegistry:
-    _registry: Dict[str, Type["Trajectory"]] = {}
+    _registry: dict[str, type[Trajectory]] = {}
 
     @classmethod
-    def register(cls, traj_cls: Type["Trajectory"]) -> None:
+    def register(cls, traj_cls: type[Trajectory]) -> None:
         cls._registry[traj_cls.__name__.lower()] = traj_cls
         cls._registry[traj_cls.__name__] = traj_cls
 
     @classmethod
-    def get(cls, name: str) -> Type["Trajectory"]:
+    def get(cls, name: str) -> type[Trajectory]:
         return cls._registry[name]
 
     @classmethod
@@ -74,7 +80,7 @@ class Trajectory:
         device: torch.device,
         arena_min: torch.Tensor,
         arena_max: torch.Tensor,
-        wall_cfg: Optional[WallConfig] = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.num_envs = num_envs
         self.device = device
@@ -104,9 +110,7 @@ class Trajectory:
             return torch.zeros(env_ids.shape[0], dtype=torch.bool, device=self.device)
         return torch.rand(env_ids.shape[0], device=self.device) < self.wall_cfg.cross_prob
 
-    def _wall_constraint_mask(
-        self, positions: torch.Tensor, cross_mode: torch.Tensor
-    ) -> torch.Tensor:
+    def _wall_constraint_mask(self, positions: torch.Tensor, cross_mode: torch.Tensor) -> torch.Tensor:
         """Check if each env's curve satisfies its mode constraint AND stays within arena bounds.
 
         Args:
@@ -172,9 +176,7 @@ class Trajectory:
             sample_fn(env_ids, cross_mode)
             return
 
-        time_grid = torch.linspace(
-            0.0, wall.check_duration, wall.check_samples, device=self.device
-        )
+        time_grid = torch.linspace(0.0, wall.check_duration, wall.check_samples, device=self.device)
         pending = env_ids.clone()
         pending_cross = cross_mode.clone()
 
@@ -326,7 +328,7 @@ class CircularTrajectory(Trajectory):
         self.phase = self.phase_dist.sample((num_envs, 1))
         self.scale = self.scale_dist.sample((num_envs, 1))
         rpy = self.rpy_dist.sample((num_envs, 1)) * torch.pi
-        self.rot = math_utils.quat_from_euler_xyz(rpy[...,0], rpy[...,1], rpy[...,2])
+        self.rot = math_utils.quat_from_euler_xyz(rpy[..., 0], rpy[..., 1], rpy[..., 2])
         self.z_offset = self.z_offset_dist.sample((num_envs, 1))
         # Per-env center offset in the x-y plane (arena-local).
         self.cx = torch.zeros((num_envs, 1), device=device)
@@ -371,8 +373,10 @@ class CircularTrajectory(Trajectory):
         a_lo = envelope + margin + 0.05
         a_hi = (self.arena_max[0] - 0.2 - envelope).clamp_min(a_lo + 0.1)
         cx_a = sign * (a_lo + torch.rand(count, device=self.device) * (a_hi - a_lo))
-        cy_a = self.arena_min[1] + 0.3 + torch.rand(count, device=self.device) * (
-            (self.arena_max[1] - self.arena_min[1] - 0.6).clamp_min(0.0)
+        cy_a = (
+            self.arena_min[1]
+            + 0.3
+            + torch.rand(count, device=self.device) * ((self.arena_max[1] - self.arena_min[1] - 0.6).clamp_min(0.0))
         )
 
         # Mode B: crossing through a gap. cx near 0; cy placed in top or bottom gap.
@@ -397,9 +401,7 @@ class CircularTrajectory(Trajectory):
             env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
         if self.wall_cfg is None:
             # Preserve legacy no-wall behavior (no rejection loop, cx=cy=0).
-            self._sample_params(
-                env_ids, torch.zeros(env_ids.shape[0], dtype=torch.bool, device=self.device)
-            )
+            self._sample_params(env_ids, torch.zeros(env_ids.shape[0], dtype=torch.bool, device=self.device))
             return
         self._resample_with_wall(env_ids, self._sample_params)
 
@@ -485,7 +487,7 @@ class LemniscateTrajectory(Trajectory):
         self.scale = self.scale_dist.sample((num_envs, 1))
 
         rpy = self.rpy_dist.sample((num_envs, 1)) * torch.pi
-        self.rot = math_utils.quat_from_euler_xyz(rpy[...,0], rpy[...,1], rpy[...,2])
+        self.rot = math_utils.quat_from_euler_xyz(rpy[..., 0], rpy[..., 1], rpy[..., 2])
         self.z_offset = self.z_offset_dist.sample((num_envs, 1))
         self.cx = torch.zeros((num_envs, 1), device=device)
         self.cy = torch.zeros((num_envs, 1), device=device)
@@ -527,8 +529,10 @@ class LemniscateTrajectory(Trajectory):
         a_lo = envelope + margin + 0.05
         a_hi = (self.arena_max[0] - 0.2 - envelope).clamp_min(a_lo + 0.1)
         cx_a = sign * (a_lo + torch.rand(count, device=self.device) * (a_hi - a_lo))
-        cy_a = self.arena_min[1] + 0.3 + torch.rand(count, device=self.device) * (
-            (self.arena_max[1] - self.arena_min[1] - 0.6).clamp_min(0.0)
+        cy_a = (
+            self.arena_min[1]
+            + 0.3
+            + torch.rand(count, device=self.device) * ((self.arena_max[1] - self.arena_min[1] - 0.6).clamp_min(0.0))
         )
 
         # Mode B: figure-8 centered near x=0 in the gap region — crossings happen through the gap.
@@ -552,9 +556,7 @@ class LemniscateTrajectory(Trajectory):
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device, dtype=torch.long)
         if self.wall_cfg is None:
-            self._sample_params(
-                env_ids, torch.zeros(env_ids.shape[0], dtype=torch.bool, device=self.device)
-            )
+            self._sample_params(env_ids, torch.zeros(env_ids.shape[0], dtype=torch.bool, device=self.device))
             return
         self._resample_with_wall(env_ids, self._sample_params)
 
@@ -595,10 +597,10 @@ def build_trajectories(
     device: torch.device,
     arena_min: torch.Tensor,
     arena_max: torch.Tensor,
-    wall_cfg: Optional[WallConfig] = None,
-) -> Tuple[List[Trajectory], List[torch.Tensor]]:
-    trajectories: List[Trajectory] = []
-    env_groups: List[torch.Tensor] = []
+    wall_cfg: WallConfig | None = None,
+) -> tuple[list[Trajectory], list[torch.Tensor]]:
+    trajectories: list[Trajectory] = []
+    env_groups: list[torch.Tensor] = []
     offset = 0
     for spec in specs:
         if spec.count <= 0:
@@ -621,13 +623,11 @@ class TrajectoryBatchManager:
         device: torch.device,
         arena_min: torch.Tensor,
         arena_max: torch.Tensor,
-        wall_cfg: Optional[WallConfig] = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.device = device
         self.wall_cfg = wall_cfg
-        self.trajectories, self.env_groups = build_trajectories(
-            specs, device, arena_min, arena_max, wall_cfg=wall_cfg
-        )
+        self.trajectories, self.env_groups = build_trajectories(specs, device, arena_min, arena_max, wall_cfg=wall_cfg)
         self.total_envs = sum(group.numel() for group in self.env_groups)
 
         self.group_index = torch.empty(self.total_envs, dtype=torch.long, device=device)
@@ -647,7 +647,7 @@ class TrajectoryBatchManager:
             local_ids = self.local_index[env_ids[self.group_index[env_ids] == g_idx]]
             self.trajectories[g_idx].reset(local_ids)
 
-    def generate_series(self, horizon: int, dt: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def generate_series(self, horizon: int, dt: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         time = torch.arange(horizon, device=self.device, dtype=torch.float32) * dt
         positions = torch.zeros(horizon, self.total_envs, 3, device=self.device)
         for traj, group in zip(self.trajectories, self.env_groups):

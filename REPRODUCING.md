@@ -91,7 +91,7 @@ camera-ready replaces it entirely; nothing from that grid is reused.)
 Aggregation is the interquartile mean (Agarwal et al., 2022), recomputed
 **independently at each evaluation point**: at every point the best and worst
 quartile of seeds are discarded and the middle ten averaged. Shaded bands and
-error bars are **95% stratified bootstrap confidence intervals** over seeds
+error bars are **95% bootstrap confidence intervals** over seeds
 (20,000 resamples), which is the interval Agarwal et al. recommend — not the
 spread of the retained seeds.
 
@@ -234,7 +234,7 @@ export WANDB_PROJECT=<the project holding the rest of the grid>
 # Resume markers must live inside the bind-mounted repo. The launcher defaults them to
 # $HOME/ablation_done, which is /root inside the container and is lost when it exits --
 # an interrupted sweep would then redo every finished cell.
-export ABLATION_DONE_DIR=/workspace/IsaacPursuitEvasion/logs/ablation_done
+export ABLATION_DONE_DIR=/workspace/MemoryStateCritic/logs/ablation_done
 ./scripts/run_ablation.sh --arena open --critics "Vs Vsz Vsh" --seeds "<seeds>"
 ```
 

@@ -1,12 +1,17 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Pre-configured pursuit-evasion environment configurations and base config classes."""
 
 from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
-from collections.abc import Iterable, Sequence
+from typing import Any, Literal
 
 from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
@@ -37,6 +42,7 @@ def _artifact(name: str, alias: str = "latest") -> str | None:
     if not PE_ARTIFACT_ENTITY or not PE_ARTIFACT_PROJECT:
         return None
     return f"{PE_ARTIFACT_ENTITY}/{PE_ARTIFACT_PROJECT}/{name}:{alias}"
+
 
 # =============================================================================
 # Constants
@@ -202,9 +208,9 @@ class PursuitEvasionEnvCfg(DirectRLEnvCfg):
     unbiased_critic: bool = False
 
     # Opponent feature exposure (for Stage 2 joint critics: V(s,z,z^opp), V(s,h,h^opp))
-    expose_opponent_z: bool = False      # Expose opponent's RNN hidden state z^opp in extras
-    expose_opponent_obs: bool = False    # Expose opponent's image and prev_action in extras
-    opponent_z_dim: int = 256            # Dimension of opponent z (GRU hidden size)
+    expose_opponent_z: bool = False  # Expose opponent's RNN hidden state z^opp in extras
+    expose_opponent_obs: bool = False  # Expose opponent's image and prev_action in extras
+    opponent_z_dim: int = 256  # Dimension of opponent z (GRU hidden size)
     # Per-pool-member opponent identifier k_t for the paper's joint critic e(k_t).
     # When True, the env emits extras["opp_id"] = LongTensor[num_envs] holding a
     # unique integer per distinct opponent controller name. Disabled by default so
@@ -226,7 +232,9 @@ class PursuitEvasionEnvCfg(DirectRLEnvCfg):
 
     flag_obs_manual_normalization: bool = False
     critic_include_propeller_speeds: bool = False  # append propeller omega to critic state (4 pursuer + 4 evader dims)
-    critic_include_heuristic_state: bool = False  # Markov state: evader rot6d+ang_vel, PID integrals, heuristic one-hot, traj setpoint (32 dims)
+    critic_include_heuristic_state: bool = (
+        False  # Markov state: evader rot6d+ang_vel, PID integrals, heuristic one-hot, traj setpoint (32 dims)
+    )
 
     enable_cameras: bool = False
     enable_evader_cameras: bool = False
@@ -258,9 +266,13 @@ class PursuitEvasionEnvCfg(DirectRLEnvCfg):
     # where T = episode_length_s * policy_rate_hz (250 by default).
     # Potential-based approach shaping (Ng et al. 1999) preserves optimal policy.
     reward_catch: float = 10.0  # R: terminal value for catch / OOB events
-    reward_time_scale: float = 1.0  # kappa_t: total time budget (per-step cost = kappa_t / T). Decoupled from R so terminal events (+/-R) dominate the dense time pressure.
+    reward_time_scale: float = (
+        1.0  # kappa_t: total time budget (per-step cost = kappa_t / T). Decoupled from R so terminal events (+/-R) dominate the dense time pressure.
+    )
     reward_approach: float = 3.0  # exponential potential shaping weight in Φ(d) = exp(-(d - r_c) / d_0)
-    reward_approach_decay: float = 0.5  # d_0 in Φ(d) = exp(-(d - r_c) / d_0). d_0 ≈ success-threshold scale matches reach-task practice (Hwangbo'19, Lee'20, Rudin'22).
+    reward_approach_decay: float = (
+        0.5  # d_0 in Φ(d) = exp(-(d - r_c) / d_0). d_0 ≈ success-threshold scale matches reach-task practice (Hwangbo'19, Lee'20, Rudin'22).
+    )
     # Note: the potential is shifted by capture_distance (= r_c) so Φ(r_c) = 1
     # — the agent can never see d < r_c (episode terminates with catch reward
     # first), so the unshifted potential's max of exp(0) at d=0 was unreachable
@@ -971,16 +983,19 @@ def _build_rl_spec(
     # multiplied (...x21 and 24x512)).  Inject the recurrent-actor descriptor
     # so the manager picks ``load_recurrent_actor_from_checkpoint``.
     config = dict(checkpoint_config or {})
-    config.setdefault("recurrent_actor_cfg", {
-        "image_channels": 2,        # depth + segmap (sensor-mode=both)
-        "image_height": 64,
-        "image_width": 64,
-        "past_actions_size": 4,     # num_past_actions=1 × action_dim=4
-        "action_dim": 4,            # body rates: roll/pitch/yaw/thrust
-        "cnn_feature_size": 128,
-        "rnn_hidden_size": 256,
-        "rnn_num_layers": 1,
-    })
+    config.setdefault(
+        "recurrent_actor_cfg",
+        {
+            "image_channels": 2,  # depth + segmap (sensor-mode=both)
+            "image_height": 64,
+            "image_width": 64,
+            "past_actions_size": 4,  # num_past_actions=1 × action_dim=4
+            "action_dim": 4,  # body rates: roll/pitch/yaw/thrust
+            "cnn_feature_size": 128,
+            "rnn_hidden_size": 256,
+            "rnn_num_layers": 1,
+        },
+    )
     return ControllerSpec(
         name=name,
         count=num_envs,
@@ -1548,14 +1563,20 @@ def amspb_vision_vel_pursuer_stage2_cfg(num_envs: int = 256) -> PursuitEvasionEn
 def amspb_vision_rnn_pursuer_stage_cfg(num_envs: int = 256) -> PursuitEvasionEnvCfg:
     """Vision+RNN AMSPB: train pursuer (stage from AMSPB_STAGE env var)."""
     return _amspb_vision_cfg(
-        stage=None, training_agent="pursuer", num_envs=num_envs, num_past_actions=1,
+        stage=None,
+        training_agent="pursuer",
+        num_envs=num_envs,
+        num_past_actions=1,
     )
 
 
 def amspb_vision_rnn_evader_stage_cfg(num_envs: int = 256) -> PursuitEvasionEnvCfg:
     """Vision+RNN AMSPB: train evader (stage from AMSPB_STAGE env var)."""
     return _amspb_vision_cfg(
-        stage=None, training_agent="evader", num_envs=num_envs, num_past_actions=1,
+        stage=None,
+        training_agent="evader",
+        num_envs=num_envs,
+        num_past_actions=1,
     )
 
 

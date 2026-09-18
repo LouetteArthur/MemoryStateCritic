@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-# Copyright (c) 2026, the IsaacPursuitEvasion authors.
+# Copyright (c) 2026, the MemoryStateCritic authors.
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
@@ -81,9 +81,7 @@ CRITICS = ["Vs", "Vsh", "Vsz", "Vsoa"]
 # unbalanced grid of 5/5/5/3 seeds; the camera-ready replaces it entirely.)
 PAPER_SEEDS: list[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123]
 PAPER_GRID: dict[tuple[str, str], set[int]] = {
-    (critic, arena): set(PAPER_SEEDS)
-    for critic in ("Vs", "Vsh", "Vsz", "Vsoa")
-    for arena in ("open", "wall")
+    (critic, arena): set(PAPER_SEEDS) for critic in ("Vs", "Vsh", "Vsz", "Vsoa") for arena in ("open", "wall")
 }
 
 # Labels follow the paper's notation update: critic-side recurrent encoding is
@@ -217,7 +215,7 @@ def fetch_runs(
         for key in METRIC_KEYS:
             try:
                 rows = list(run.scan_history(keys=["_step", key]))
-            except Exception as exc:
+            except Exception:
                 continue
             if not rows:
                 continue
@@ -276,7 +274,7 @@ def aggregate_metric(
 
     - ``"iqm_ci"``: **Agarwal et al.'s IQM as specified** — the 25%-trimmed
       mean recomputed independently at every evaluation point — with a 95%
-      stratified bootstrap confidence interval over seeds as the band.
+      bootstrap confidence interval over seeds as the band.
     """
     traces: dict[str, list[pd.DataFrame]] = {c: [] for c in CRITICS}
     for rd in data:
@@ -307,7 +305,7 @@ def aggregate_metric(
             # True Agarwal et al. (2021) IQM: trim the score distribution
             # *independently at every evaluation point*, so a seed may be
             # trimmed early in training and retained later. Band = 95%
-            # stratified bootstrap CI of the IQM, resampling seeds with
+            # bootstrap CI of the IQM, resampling seeds with
             # replacement (their recommended interval, not a spread).
             trim = int(np.floor(n / 4))
             srt = np.sort(interp, axis=0)
@@ -850,7 +848,11 @@ def plot_termination_heatmap(data: list[RunData], output_dir: Path, last_n: int 
                 if np.isnan(m):
                     txt = "—"
                 else:
-                    txt = f"{m*100:.0f}%\n±{s*100:.0f}%" if seed_count > 1 else f"{m*100:.0f}%"
+                    # One decimal: at 20 seeds the capture-rate gap between the
+                    # state-only and memory-state critics in the wall arena is
+                    # ~0.9 points, which rounds away at zero decimals and makes
+                    # the two cells read as identical.
+                    txt = f"{m*100:.1f}%\n±{s*100:.1f}%" if seed_count > 1 else f"{m*100:.1f}%"
                 # White text on dark cells (low values are dark in viridis)
                 colour = "white" if (np.isnan(m) or m < 0.55) else "black"
                 ax.text(j, i, txt, ha="center", va="center", fontsize=9, color=colour)
@@ -885,7 +887,7 @@ def _iqm_summary(values: np.ndarray) -> tuple[float, float, float, int, int]:
 
 
 def _iqm_boot_summary(vals: np.ndarray, n_boot: int = 20000, seed: int = 0):
-    """IQM of a set of per-seed scores plus a 95% stratified bootstrap CI.
+    """IQM of a set of per-seed scores plus a 95% bootstrap CI over seeds.
 
     This is Agarwal et al. (2021)'s recommended pair for final-performance
     reporting: the 25%-trimmed mean as the point estimate, and a bootstrap
@@ -1312,7 +1314,7 @@ def main() -> None:
     print("Computing win rates...")
     win_df = compute_final_win_rates(data)
     plot_win_rate_bars(win_df, output_dir, aggregation=args.aggregation)
-    print(f"  win_rate.{{pdf,png}} saved")
+    print("  win_rate.{pdf,png} saved")
 
     if args.entity:
         print("Plotting per-heuristic capture rates...")

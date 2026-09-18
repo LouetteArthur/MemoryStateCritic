@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Actor-only deployment config (mirrors skrl_ppo_cfg policy network).
 obs_dim: 24
 action_dim: 4

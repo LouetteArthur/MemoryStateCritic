@@ -1,10 +1,14 @@
-from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import gymnasium
-
 import torch
 import torch.nn as nn
-
 from skrl.models.torch import DeterministicMixin, Model
 
 
@@ -28,9 +32,9 @@ class VshCriticModel(DeterministicMixin, Model):
 
     def __init__(
         self,
-        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        device: Optional[Union[str, torch.device]] = None,
+        observation_space: int | tuple[int] | gymnasium.Space | None = None,
+        action_space: int | tuple[int] | gymnasium.Space | None = None,
+        device: str | torch.device | None = None,
         clip_actions: bool = False,
         actor_hidden_size: int = 128,
         z_opp_dim: int = 0,
@@ -50,12 +54,10 @@ class VshCriticModel(DeterministicMixin, Model):
         state_size = self.num_observations
         input_size = state_size + actor_hidden_size + z_opp_dim + opp_id_dim
 
-        self.opp_id_embedding: Optional[nn.Embedding] = None
+        self.opp_id_embedding: nn.Embedding | None = None
         if opp_id_dim > 0:
             if opp_id_num <= 0:
-                raise ValueError(
-                    f"opp_id_dim={opp_id_dim} requires opp_id_num > 0 (got {opp_id_num})."
-                )
+                raise ValueError(f"opp_id_dim={opp_id_dim} requires opp_id_num > 0 (got {opp_id_num}).")
             self.opp_id_embedding = nn.Embedding(opp_id_num, opp_id_dim)
 
         modules: list[nn.Module] = []
@@ -135,9 +137,9 @@ class VshCriticModel(DeterministicMixin, Model):
 
 
 def vsh_critic_model(
-    observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-    action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-    device: Optional[Union[str, torch.device]] = None,
+    observation_space: int | tuple[int] | gymnasium.Space | None = None,
+    action_space: int | tuple[int] | gymnasium.Space | None = None,
+    device: str | torch.device | None = None,
     clip_actions: bool = False,
     actor_hidden_size: int = 128,
     z_opp_dim: int = 0,
@@ -147,7 +149,7 @@ def vsh_critic_model(
     return_source: bool = False,
     *args,
     **kwargs,
-) -> Union[Model, str]:
+) -> Model | str:
     """Factory function for the V(s, z) / V(s, z, z^opp [, e(k)]) critic.
 
     Called by the skrl Runner when the YAML config specifies
@@ -157,10 +159,10 @@ def vsh_critic_model(
     opp_id_str = f" + e_k({opp_id_dim} from {opp_id_num} ids)" if opp_id_dim > 0 else ""
     if return_source:
         return (
-            f"VshCriticModel(\n"
+            "VshCriticModel(\n"
             f"  Input: state({observation_space}) + z_theta({actor_hidden_size}){z_opp_str}{opp_id_str}\n"
             f"  MLP: {list(layers)} → 1\n"
-            f")"
+            ")"
         )
 
     return VshCriticModel(

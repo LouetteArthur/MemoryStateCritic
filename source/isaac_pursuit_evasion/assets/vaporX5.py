@@ -1,15 +1,20 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Configuration for the VaporX5 robot."""
+
+import os.path as osp
+
 import isaaclab.sim as sim_utils
+import torch
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 from isaaclab.sensors import CameraCfg, TiledCameraCfg
-from isaaclab.sim.spawners.sensors.sensors_cfg import FisheyeCameraCfg, PinholeCameraCfg
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.math import matrix_from_quat, quat_apply, quat_mul
-import os.path as osp
 from isaaclab.sim.converters import UrdfConverterCfg
-import torch
-
+from isaaclab.sim.spawners.sensors.sensors_cfg import FisheyeCameraCfg, PinholeCameraCfg
+from isaaclab.utils.math import matrix_from_quat, quat_apply, quat_mul
 
 ASSET_PATH = osp.join(osp.dirname(__file__), "VaporX5")
 
@@ -22,8 +27,8 @@ VaporX5 = ArticulationCfg(
         merge_fixed_joints=False,
         fix_base=False,
         joint_drive=UrdfConverterCfg.JointDriveCfg(
-                    gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=None, damping=None)
-        )
+            gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=None, damping=None)
+        ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 1.0),
@@ -49,8 +54,8 @@ VaporX5 = ArticulationCfg(
 
 def fpv_camera_cfg(
     model: str = "fisheye",
-    width: int = 320, # 640
-    height: int = 240, # 480
+    width: int = 320,  # 640
+    height: int = 240,  # 480
     frequency: float = 50,
     fov_deg: float = 150.0,
     tilt_deg: float = -20.0,
@@ -126,8 +131,12 @@ def transform_camera_line(
     body_quat = body_quat.view(-1, 4)
     batch = body_pos.shape[0]
 
-    offset_pos = torch.tensor(cam_cfg.offset.pos, device=body_pos.device, dtype=body_pos.dtype).view(1, 3).expand(batch, -1)
-    offset_quat = torch.tensor(cam_cfg.offset.rot, device=body_pos.device, dtype=body_pos.dtype).view(1, 4).expand(batch, -1)
+    offset_pos = (
+        torch.tensor(cam_cfg.offset.pos, device=body_pos.device, dtype=body_pos.dtype).view(1, 3).expand(batch, -1)
+    )
+    offset_quat = (
+        torch.tensor(cam_cfg.offset.rot, device=body_pos.device, dtype=body_pos.dtype).view(1, 4).expand(batch, -1)
+    )
     cam_pos_w = body_pos + quat_apply(body_quat, offset_pos)
     cam_quat_w = quat_mul(body_quat, offset_quat)
     rot = matrix_from_quat(cam_quat_w).view(-1, 3, 3)

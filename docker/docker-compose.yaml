@@ -23,14 +23,14 @@ services:
         required: false
     volumes:
       # Live-mount the repo: git checkout on the host is seen in the container.
-      - ..:/workspace/IsaacPursuitEvasion
+      - ..:/workspace/MemoryStateCritic
       # Persist Isaac Sim caches across container runs (assets, shaders, pip).
       - isaac-ov-cache:/root/.cache/ov
       - isaac-pip-cache:/root/.cache/pip
       - isaac-glcache:/root/.cache/nvidia/GLCache
       - isaac-computecache:/root/.nv/ComputeCache
       - isaac-kit-data:/root/.local/share/ov
-    working_dir: /workspace/IsaacPursuitEvasion
+    working_dir: /workspace/MemoryStateCritic
     ipc: host
     shm_size: "16gb"
     ulimits:

@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # crazyflie.yaml - Standard Crazyflie 2.x (brushed motors)
 name: crazyflie
 model: cf2x

@@ -1,11 +1,17 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Shared helpers for lightweight policy loaders."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import torch.nn as nn
-
 
 ACTIVATIONS: dict[str, type[nn.Module]] = {
     "elu": nn.ELU,

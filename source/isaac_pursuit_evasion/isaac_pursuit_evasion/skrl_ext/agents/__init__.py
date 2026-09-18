@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Custom skrl agents with asymmetric actor-critic, V(s,z), and V(s,h) support."""
 
 from isaac_pursuit_evasion.skrl_ext.agents.ppo_asym import (

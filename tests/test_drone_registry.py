@@ -49,7 +49,6 @@ class _AttrModule(types.ModuleType):
 
     def __init_subclass__(cls, **kwargs):
         """Allow subclassing stubs (e.g. ``class Foo(omni.ext.IExt)``)."""
-        pass
 
     def __getattr__(self, item):
         if item.startswith("__") and item.endswith("__"):

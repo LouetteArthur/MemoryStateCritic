@@ -1,20 +1,26 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
+from isaaclab.assets import ArticulationData
 
-from .config import load_controller_config
-from .lee_controller import drone_cfg_name
-from .crazy_controller import build_crazyflie_pid
+from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import (
+    WallConfig,
+)
+
 from ..dynamics.propellers import Drone_cfg
-from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import WallConfig
-
-from isaaclab.assets import Articulation, ArticulationData
+from .config import load_controller_config
+from .crazy_controller import build_crazyflie_pid
+from .lee_controller import drone_cfg_name
 
 
 class PDPursuerController:
     """Velocity-based PID pursuit controller that outputs velocity and yaw commands."""
+
     def __init__(
         self,
         num_envs: int,
@@ -23,8 +29,8 @@ class PDPursuerController:
         total_frames: int = 1,
         command_heading: bool = False,
         device: str = "cuda",
-        controller_cfg: Optional[dict] = None,
-        lee_controller_cfg: Optional[dict] = None,
+        controller_cfg: dict | None = None,
+        lee_controller_cfg: dict | None = None,
     ) -> None:
         self.device = device
         self.num_envs = num_envs
@@ -36,7 +42,8 @@ class PDPursuerController:
         if controller_cfg is None:
             controller_cfg = load_controller_config("pd_pursuer", drone_cfg_name(drone_cfg))
 
-        to_tensor = lambda values: torch.as_tensor(values, device=device, dtype=torch.float32).flatten()
+        def to_tensor(values):
+            return torch.as_tensor(values, device=device, dtype=torch.float32).flatten()
 
         self.kp = to_tensor(controller_cfg["kp"])
         self.kd = to_tensor(controller_cfg["kd"])
@@ -51,7 +58,7 @@ class PDPursuerController:
         self.e_d = torch.zeros_like(self.e_p)
         self.speed_limit = self.max_speed.unsqueeze(0).repeat(num_envs, 1)
 
-    def to(self, device: str) -> "PDPursuerController":
+    def to(self, device: str) -> PDPursuerController:
         attrs = ("kp", "kd", "derivative_limit", "max_speed", "start_speed")
         for attr in attrs:
             setattr(self, attr, getattr(self, attr).to(device))
@@ -110,7 +117,7 @@ class PDPursuerController:
         if yaw_cmd is None:
             yaw_cmd = torch.zeros((vel_cmd.shape[0], 1), device=vel_cmd.device, dtype=vel_cmd.dtype)
         return torch.cat((vel_cmd, yaw_cmd), dim=-1)
-    
+
 
 class PDPursuerWrapper:
     def __init__(
@@ -125,7 +132,7 @@ class PDPursuerWrapper:
         data_evader: ArticulationData,
     ):
         return self.pd_controller(data_pursuer.root_state_w, data_evader.root_state_w)
-    
+
 
 class FRPNPursuerController:
     """Fast-response proportional navigation controller that outputs velocity and yaw commands."""
@@ -138,9 +145,9 @@ class FRPNPursuerController:
         total_frames: int = 1,
         device: str = "cuda",
         command_heading: bool = False,
-        controller_cfg: Optional[dict] = None,
-        curriculum_cfg: Optional[dict] = None,
-        wall_cfg: Optional[WallConfig] = None,
+        controller_cfg: dict | None = None,
+        curriculum_cfg: dict | None = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.device = device
         self.num_envs = num_envs
@@ -177,7 +184,7 @@ class FRPNPursuerController:
         self.speed_limit = self.max_speed.unsqueeze(0).repeat(num_envs, 1)
         self.update_curriculum(0)
 
-    def to(self, device: str) -> "FRPNPursuerController":
+    def to(self, device: str) -> FRPNPursuerController:
         self.max_speed = self.max_speed.to(device)
         self.start_speed = self.start_speed.to(device)
         self.speed_limit = self.speed_limit.to(device)
@@ -194,7 +201,6 @@ class FRPNPursuerController:
     def reset(self, env_ids: torch.Tensor, frame: int = 0):
         env_ids = env_ids.to(dtype=torch.long, device=self.device)
         self.update_curriculum(frame)
-        self.speed_limit[env_ids] = self.speed_limit[env_ids]
 
     def update_curriculum(self, frame: int) -> None:
         if not self.curriculum_enabled:
@@ -267,10 +273,10 @@ class CrazyflieFRPNPursuerWrapper:
         total_frames: int = 1,
         device: str = "cuda",
         command_heading: bool = False,
-        controller_cfg: Optional[dict] = None,
-        curriculum_cfg: Optional[dict] = None,
-        pid_params: Optional[dict] = None,
-        wall_cfg: Optional[WallConfig] = None,
+        controller_cfg: dict | None = None,
+        curriculum_cfg: dict | None = None,
+        pid_params: dict | None = None,
+        wall_cfg: WallConfig | None = None,
     ) -> None:
         self.device = torch.device(device)
         self.controller = FRPNPursuerController(

@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Project-local extensions to skrl.
 
 This package contains all the custom algorithmic additions used by
@@ -33,7 +38,6 @@ vendored skrl copy.
 """
 
 from gymnasium import spaces as _gym_spaces
-
 from skrl.utils.spaces.torch import spaces as _skrl_spaces_module
 
 _UNFLATTEN_PATCHED_FLAG = "_isaac_pe_dict_input_patch"

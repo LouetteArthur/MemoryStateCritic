@@ -1,12 +1,17 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Pursuit-evasion environment for training RL agents."""
 
 from __future__ import annotations
 
 import copy
 import math
-from pathlib import Path
-from typing import Any, Literal, Optional
 from collections.abc import Sequence
+from pathlib import Path
+from typing import Any, Literal
 
 import carb
 import isaaclab.sim as sim_utils
@@ -33,7 +38,6 @@ from source.isaac_pursuit_evasion.controllers.rl_controllers import (
 )
 from source.isaac_pursuit_evasion.controllers.visual_ball_evader import VisualBallEvader
 from source.isaac_pursuit_evasion.dynamics.propellers import Drone_cfg, Propellers
-from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import WallConfig
 
 # Import config classes and helpers from the cfg module
 from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.pursuit_evasion.pursuit_evasion_cfg import (
@@ -42,10 +46,8 @@ from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.pursuit_eva
     ControllerSpec,
     PursuitEvasionEnvCfg,
     _infer_controller_kind,
-    compute_image_obs_shape,
     compute_obs_dim,
     compute_state_dim,
-    uses_image_observations,
 )
 from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.pursuit_evasion.tools.frustum_viz import (
     FrustumVisualizer,
@@ -56,6 +58,9 @@ from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.pursuit_eva
 )
 from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.pursuit_evasion.tools.stats_tracker import (
     PursuitEvasionStatsTracker,
+)
+from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import (
+    WallConfig,
 )
 
 
@@ -366,7 +371,6 @@ class PursuitEvasionEnv(DirectRLEnv):
         # the capture magnitude R so that the +/-R terminal events dominate
         # the dense time-pressure signal — without this, V(s,h) was winning by
         # avoiding the heavy R-scaled time cost rather than by capturing.
-        R = self.cfg.reward_catch
         kappa_t = self.cfg.reward_time_scale
         T = self.max_episode_length  # episode_length_s * policy_rate_hz
         self._reward_time_cost = kappa_t / T if T > 0 else 0.0
@@ -451,8 +455,8 @@ class PursuitEvasionEnv(DirectRLEnv):
         obs_both = {
             "pursuer": self._compute_obs_tensor("pursuer"),
             "evader": self._compute_obs_tensor("evader"),
+            "policy": torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device),
         }
-        obs_both["policy"] = torch.zeros(self.num_envs, self.cfg.observation_space, device=self.device)
         if self.cfg.asymmetric_actor_critic:
             agent = self.cfg.training_agent if self.cfg.training_agent else "pursuer"
             obs_both["critic"] = self._build_critic_states(agent, obs_both)
@@ -536,9 +540,7 @@ class PursuitEvasionEnv(DirectRLEnv):
             rho_limit = self._K_RHOANGLE
             in_fov = rho_cam <= rho_limit
             # True visibility also requires the wall not to block line-of-sight.
-            origins = (
-                self._terrain.env_origins if env_ids is None else self._terrain.env_origins[env_ids]
-            )
+            origins = self._terrain.env_origins if env_ids is None else self._terrain.env_origins[env_ids]
             cam_pos_local = cam_pos_w - origins
             other_local = self._select(self._agent_data(other).data.root_pos_w, env_ids) - origins
             occluded = self._wall_occludes_los(cam_pos_local, other_local).unsqueeze(-1)
@@ -608,9 +610,7 @@ class PursuitEvasionEnv(DirectRLEnv):
             rho_cam = self._camera_angle(agent, env_ids).unsqueeze(-1)
             rho_limit = self._K_RHOANGLE
             in_fov = rho_cam <= rho_limit
-            origins = (
-                self._terrain.env_origins if env_ids is None else self._terrain.env_origins[env_ids]
-            )
+            origins = self._terrain.env_origins if env_ids is None else self._terrain.env_origins[env_ids]
             cam_pos_local = cam_pos_w - origins
             other_local = other_world - origins
             occluded = self._wall_occludes_los(cam_pos_local, other_local).unsqueeze(-1)
@@ -734,9 +734,7 @@ class PursuitEvasionEnv(DirectRLEnv):
             if manager is not None:
                 self.extras["z_opp"] = manager.get_opp_z()
             else:
-                self.extras["z_opp"] = torch.zeros(
-                    self.num_envs, self.cfg.opponent_z_dim, device=self.device
-                )
+                self.extras["z_opp"] = torch.zeros(self.num_envs, self.cfg.opponent_z_dim, device=self.device)
 
         if self.cfg.expose_opp_id:
             self.extras["opp_id"] = self._opp_pool_id
@@ -760,18 +758,14 @@ class PursuitEvasionEnv(DirectRLEnv):
                 except Exception:
                     # Opponent camera not available — provide zeros
                     img_shape = self._image_obs_shape
-                    self.extras["opp_image"] = torch.zeros(
-                        self.num_envs, *img_shape, device=self.device
-                    )
+                    self.extras["opp_image"] = torch.zeros(self.num_envs, *img_shape, device=self.device)
             else:
                 # No image mode or no camera — provide zeros matching actor image shape
                 if hasattr(self, "_image_obs_shape") and self._image_obs_shape is not None:
                     img_shape = self._image_obs_shape
                 else:
                     img_shape = (2, 64, 64)  # default: depth + segmap
-                self.extras["opp_image"] = torch.zeros(
-                    self.num_envs, *img_shape, device=self.device
-                )
+                self.extras["opp_image"] = torch.zeros(self.num_envs, *img_shape, device=self.device)
 
     @carb.profiler.profile
     def _get_rewards(self) -> torch.Tensor:
@@ -883,8 +877,10 @@ class PursuitEvasionEnv(DirectRLEnv):
             visible = self._last_target_visible.get("pursuer")
             if visible is None:
                 visible = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
-            perception = visible.float() * self.cfg.reward_perception_scale * torch.exp(
-                -self.cfg.reward_perception_angle_scale * rho_camera
+            perception = (
+                visible.float()
+                * self.cfg.reward_perception_scale
+                * torch.exp(-self.cfg.reward_perception_angle_scale * rho_camera)
             )
         else:
             perception = torch.zeros_like(rewards)
@@ -1248,6 +1244,7 @@ class PursuitEvasionEnv(DirectRLEnv):
             nonlocal _label_method_logged
             try:
                 import omni.replicator.core as rep
+
                 rep.modify.semantics([("class", label)], prim_path)
                 if not _label_method_logged:
                     carb.log_info("[PursuitEvasion] Semantic labels applied via omni.replicator.core")
@@ -1257,6 +1254,7 @@ class PursuitEvasionEnv(DirectRLEnv):
                 pass
             try:
                 from omni.isaac.core.utils.semantics import add_update_semantics
+
                 prim = prim_utils.get_prim_at_path(prim_path)
                 if prim.IsValid():
                     add_update_semantics(prim, label, "class")
@@ -1268,6 +1266,7 @@ class PursuitEvasionEnv(DirectRLEnv):
                 pass
             try:
                 from pxr import Semantics
+
                 prim = prim_utils.get_prim_at_path(prim_path)
                 if prim.IsValid():
                     if not prim.HasAPI(Semantics.SemanticsAPI):
@@ -1944,9 +1943,7 @@ class PursuitEvasionEnv(DirectRLEnv):
         # with a clear message, but state-based loaded opponents still work.
         opp_image: torch.Tensor | None = None
         if self._use_image_obs:
-            camera_available = (
-                (agent == "pursuer") or self.cfg.enable_evader_cameras
-            )
+            camera_available = (agent == "pursuer") or self.cfg.enable_evader_cameras
             if camera_available:
                 try:
                     # update_history=False so opponent reads don't corrupt
@@ -2246,7 +2243,7 @@ class PursuitEvasionEnv(DirectRLEnv):
         current_channels = []
 
         if self.cfg.obs_include_segmap:
-            segmap = camera.data.output.get("semantic_segmentation", None)
+            segmap = camera.data.output.get("semantic_segmentation")
             if segmap is not None:
                 # Cameras run with colorize_semantic_segmentation=False, so
                 # the segmap is an int class-ID image of shape (N, H, W, 1)
@@ -2272,7 +2269,7 @@ class PursuitEvasionEnv(DirectRLEnv):
                 )
 
         if self.cfg.obs_include_depth:
-            depth = camera.data.output.get("depth", None)
+            depth = camera.data.output.get("depth")
             if depth is not None:
                 depth = depth.float()
                 # Output shape is (N, H, W, 1) — move to (N, 1, H, W)
@@ -2328,7 +2325,7 @@ class PursuitEvasionEnv(DirectRLEnv):
         if self._camera_save_stride > 1:
             if int(self.common_step_counter) % self._camera_save_stride != 0:
                 return
-        images = self._pursuer_camera.data.output.get("rgb", None)
+        images = self._pursuer_camera.data.output.get("rgb")
         if images is None:
             return
         img = images.detach().clone()
@@ -2352,7 +2349,7 @@ class PursuitEvasionEnv(DirectRLEnv):
             frame = img[env_id : env_id + 1].cpu()
             if self.cfg.camera_overlay_text and vis_flags is not None and rho_last is not None:
                 import torchvision.transforms.functional as F
-                from PIL import ImageDraw, ImageFont
+                from PIL import ImageDraw
 
                 frame_np = frame[0]
                 frame_np = frame_np.permute(2, 0, 1)
@@ -2727,9 +2724,7 @@ class PursuitEvasionEnv(DirectRLEnv):
                 "kind": kind,
             }
             if payload:
-                if kind in RL_KINDS:
-                    cfg.update(payload)
-                elif any(key in payload for key in ("config", "lee_controller_cfg")):
+                if kind in RL_KINDS or any(key in payload for key in ("config", "lee_controller_cfg")):
                     cfg.update(payload)
                 else:
                     cfg["config"] = payload

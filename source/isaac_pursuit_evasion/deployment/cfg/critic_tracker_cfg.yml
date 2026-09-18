@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Critic-only deployment config (mirrors skrl_ppo_cfg value network).
 obs_dim: 24
 output_dim: 1

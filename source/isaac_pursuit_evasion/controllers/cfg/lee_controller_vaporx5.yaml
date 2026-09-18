@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # position_gain: [2, 2, 4.0]
 # velocity_gain: [2.8, 2.8, 3.5]
 # attitude_gain: [100.0, 100.0, 3.0]

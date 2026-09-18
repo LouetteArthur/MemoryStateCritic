@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """V(s, h) history-state critic with critic-side CNN+GRU.
 
 The critic has its **own** CNN encoder and GRU, separate from the actor's.
@@ -14,15 +19,12 @@ can manage the critic's hidden state (reset on episode boundaries, BPTT
 over sequences, etc.).
 """
 
-from typing import Any, Mapping, Optional, Sequence, Tuple, Union
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import gymnasium
-import numpy as np
-from gymnasium import spaces
-
 import torch
 import torch.nn as nn
-
 from skrl.models.torch import DeterministicMixin, Model
 
 
@@ -57,21 +59,21 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
 
     def __init__(
         self,
-        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        device: Optional[Union[str, torch.device]] = None,
+        observation_space: int | tuple[int] | gymnasium.Space | None = None,
+        action_space: int | tuple[int] | gymnasium.Space | None = None,
+        device: str | torch.device | None = None,
         clip_actions: bool = False,
         image_channels: int = 2,
         image_height: int = 64,
         image_width: int = 64,
         past_actions_size: int = 4,
-        rnn: Optional[Mapping[str, Any]] = None,
+        rnn: Mapping[str, Any] | None = None,
         num_envs: int = 1,
         cnn_feature_size: int = 128,
         layers: Sequence[int] = (256, 128, 64),
         opp_branch: bool = False,
-        opp_image_channels: Optional[int] = None,
-        opp_past_actions_size: Optional[int] = None,
+        opp_image_channels: int | None = None,
+        opp_past_actions_size: int | None = None,
         opp_id_dim: int = 0,
         opp_id_num: int = 0,
         **kwargs,
@@ -87,12 +89,10 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
         # Prop. 2, joint history-state critic). For SHH this mirrors the
         # SZZ wiring in vsh_critic.py — same Embedding(opp_id_num, opp_id_dim)
         # concatenated into the MLP head.
-        self.opp_id_embedding: Optional[nn.Embedding] = None
+        self.opp_id_embedding: nn.Embedding | None = None
         if opp_id_dim > 0:
             if opp_id_num <= 0:
-                raise ValueError(
-                    f"opp_id_dim={opp_id_dim} requires opp_id_num > 0 (got {opp_id_num})."
-                )
+                raise ValueError(f"opp_id_dim={opp_id_dim} requires opp_id_num > 0 (got {opp_id_num}).")
             self.opp_id_embedding = nn.Embedding(opp_id_num, opp_id_dim)
 
         # RNN configuration
@@ -205,7 +205,7 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
         h0: torch.Tensor,
         has_seq: bool,
         seq_len: int,
-        terminated: Optional[torch.Tensor],
+        terminated: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run a GRU branch with BPTT and mid-sequence done resets.
 
@@ -272,14 +272,18 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
         if critic_image is None:
             flat_batch = batch_size * seq_len if has_seq else batch_size
             critic_image = torch.zeros(
-                flat_batch, *self._image_shape,
-                device=states.device, dtype=states.dtype,
+                flat_batch,
+                *self._image_shape,
+                device=states.device,
+                dtype=states.dtype,
             )
         if critic_past_actions is None:
             flat_batch = batch_size * seq_len if has_seq else batch_size
             critic_past_actions = torch.zeros(
-                flat_batch, self._past_actions_size,
-                device=states.device, dtype=states.dtype,
+                flat_batch,
+                self._past_actions_size,
+                device=states.device,
+                dtype=states.dtype,
             )
 
         # Flatten seq dim for CNN
@@ -302,7 +306,7 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
         x = features.reshape(batch_size, seq_len, -1)
 
         # --- RNN hidden state handling ---
-        rnn_states = inputs.get("rnn", None)
+        rnn_states = inputs.get("rnn")
         if isinstance(rnn_states, torch.Tensor):
             rnn_states = [rnn_states]
         if rnn_states and len(rnn_states) > 0 and x.dim() == 3:
@@ -311,8 +315,11 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
                 x = x.transpose(0, 1)
         if not rnn_states or len(rnn_states) == 0:
             h0 = torch.zeros(
-                self._rnn_num_layers, x.shape[0], self._rnn_hidden_size,
-                device=x.device, dtype=x.dtype,
+                self._rnn_num_layers,
+                x.shape[0],
+                self._rnn_hidden_size,
+                device=x.device,
+                dtype=x.dtype,
             )
         else:
             h0 = rnn_states[0]
@@ -320,7 +327,7 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
                 h0 = h0.unsqueeze(0)
             h0 = h0.contiguous()
 
-        terminated = inputs.get("terminated", None)
+        terminated = inputs.get("terminated")
         gru_features, h_learner = self._run_gru_branch(self.gru, x, h0, has_seq, seq_len, terminated)
 
         # --- Opponent branch (V(s,h,h^opp)) ---
@@ -333,14 +340,18 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
             if opp_image is None:
                 flat_batch = batch_size * seq_len if has_seq else batch_size
                 opp_image = torch.zeros(
-                    flat_batch, *self._opp_image_shape,
-                    device=states.device, dtype=states.dtype,
+                    flat_batch,
+                    *self._opp_image_shape,
+                    device=states.device,
+                    dtype=states.dtype,
                 )
             if opp_prev_action is None:
                 flat_batch = batch_size * seq_len if has_seq else batch_size
                 opp_prev_action = torch.zeros(
-                    flat_batch, self._opp_past_actions_size,
-                    device=states.device, dtype=states.dtype,
+                    flat_batch,
+                    self._opp_past_actions_size,
+                    device=states.device,
+                    dtype=states.dtype,
                 )
 
             if has_seq and opp_image.dim() == 5:
@@ -380,14 +391,15 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
                 h0_opp = h0_opp.contiguous()
             else:
                 h0_opp = torch.zeros(
-                    self._rnn_num_layers, x_opp.shape[0], self._rnn_hidden_size,
-                    device=x_opp.device, dtype=x_opp.dtype,
+                    self._rnn_num_layers,
+                    x_opp.shape[0],
+                    self._rnn_hidden_size,
+                    device=x_opp.device,
+                    dtype=x_opp.dtype,
                 )
             h0_opp = torch.nan_to_num(h0_opp, nan=0.0, posinf=0.0, neginf=0.0)
 
-            opp_gru_features, h_opp = self._run_gru_branch(
-                self.opp_gru, x_opp, h0_opp, has_seq, seq_len, terminated
-            )
+            opp_gru_features, h_opp = self._run_gru_branch(self.opp_gru, x_opp, h0_opp, has_seq, seq_len, terminated)
             rnn_outputs.append(h_opp)
 
         # Flatten states for MLP if needed
@@ -406,8 +418,10 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
             if opp_id is None:
                 # Initial-eval / bootstrap fallback: zero embedding output.
                 opp_emb = torch.zeros(
-                    states_flat.shape[0], self._opp_id_dim,
-                    device=states_flat.device, dtype=states_flat.dtype,
+                    states_flat.shape[0],
+                    self._opp_id_dim,
+                    device=states_flat.device,
+                    dtype=states_flat.dtype,
                 )
             else:
                 flat_ids = opp_id.to(torch.long).reshape(-1)
@@ -430,27 +444,27 @@ class HistoryStateCriticModel(DeterministicMixin, Model):
 
 
 def history_state_critic_model(
-    observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-    action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-    device: Optional[Union[str, torch.device]] = None,
+    observation_space: int | tuple[int] | gymnasium.Space | None = None,
+    action_space: int | tuple[int] | gymnasium.Space | None = None,
+    device: str | torch.device | None = None,
     clip_actions: bool = False,
     image_channels: int = 2,
     image_height: int = 64,
     image_width: int = 64,
     past_actions_size: int = 4,
-    rnn: Optional[Mapping[str, Any]] = None,
+    rnn: Mapping[str, Any] | None = None,
     num_envs: int = 1,
     cnn_feature_size: int = 128,
     layers: Sequence[int] = (256, 128, 64),
     opp_branch: bool = False,
-    opp_image_channels: Optional[int] = None,
-    opp_past_actions_size: Optional[int] = None,
+    opp_image_channels: int | None = None,
+    opp_past_actions_size: int | None = None,
     opp_id_dim: int = 0,
     opp_id_num: int = 0,
     return_source: bool = False,
     *args,
     **kwargs,
-) -> Union[Model, str]:
+) -> Model | str:
     """Factory function for the V(s, h) / V(s, h, h^opp [, e(k)]) critic.
 
     Called by the skrl Runner when the YAML config specifies
@@ -461,7 +475,7 @@ def history_state_critic_model(
     e_k_str = f" + e_k({opp_id_dim} from {opp_id_num} ids)" if opp_id_dim > 0 else ""
     if return_source:
         return (
-            f"HistoryStateCriticModel(\n"
+            "HistoryStateCriticModel(\n"
             f"  CNN: Conv2d({image_channels}→32, k=8,s=4) → Conv2d(32→64, k=4,s=2) → "
             f"Conv2d(64→64, k=3,s=1) → Linear({cnn_feature_size})\n"
             f"  GRU: input={cnn_feature_size}+{past_actions_size}, "
@@ -469,7 +483,7 @@ def history_state_critic_model(
             f"layers={rnn_cfg.get('num_layers', 1)}, "
             f"seq_len={rnn_cfg.get('sequence_length', 16)}{opp_str}{e_k_str}\n"
             f"  MLP: state({observation_space}) + gru_out → {list(layers)} → 1\n"
-            f")"
+            ")"
         )
 
     return HistoryStateCriticModel(

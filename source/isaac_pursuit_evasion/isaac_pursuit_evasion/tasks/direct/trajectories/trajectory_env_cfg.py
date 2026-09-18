@@ -1,4 +1,10 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Configuration helpers for the trajectory tracking environment."""
+
 from __future__ import annotations
 
 from .tracking_env import TrajectorySpecConfig, TrajectoryTrackingEnvCfg

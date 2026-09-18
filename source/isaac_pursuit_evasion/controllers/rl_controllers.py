@@ -1,14 +1,20 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
-from typing import Callable, Optional, Union
+from collections.abc import Callable
+from typing import Union
 
 import torch
 from tensordict import TensorDictBase
 
-from source.isaac_pursuit_evasion.controllers.crazy_controller import build_crazyflie_pid
+from source.isaac_pursuit_evasion.controllers.crazy_controller import (
+    build_crazyflie_pid,
+)
 from source.isaac_pursuit_evasion.dynamics.propellers import Drone_cfg
-
-from isaaclab.utils import math as math_utils
 
 TensorDictLike = TensorDictBase
 PolicyOutput = Union[torch.Tensor, TensorDictBase]
@@ -50,8 +56,8 @@ class RLVelocityController:
         device: str = "cuda",
         action_key: str = "action",
         root_state_key: str = "root_state",
-        vel_scale: Optional[torch.Tensor] = None,
-        yaw_rate_scale: Optional[Union[float, torch.Tensor]] = None,
+        vel_scale: torch.Tensor | None = None,
+        yaw_rate_scale: float | torch.Tensor | None = None,
     ) -> None:
         self.num_envs = num_envs
         self.device = torch.device(device)
@@ -84,12 +90,15 @@ class RLVelocityController:
         if self.vel_scale is not None:
             target_vel = target_vel * self.vel_scale
 
-        yaw_rate = actions[..., 3:4] if actions.shape[-1] > 3 else torch.zeros(
-            (target_vel.shape[0], 1), device=self.device, dtype=target_vel.dtype
+        yaw_rate = (
+            actions[..., 3:4]
+            if actions.shape[-1] > 3
+            else torch.zeros((target_vel.shape[0], 1), device=self.device, dtype=target_vel.dtype)
         )
         yaw_rate = yaw_rate * self.yaw_rate_scale
 
         return torch.cat((target_vel, yaw_rate), dim=-1)
+
 
 class RLBodyRatesController:
     """Runs an RL policy that outputs body-rate targets and thrust commands."""
@@ -104,7 +113,7 @@ class RLBodyRatesController:
         action_key: str = "action",
         root_state_key: str = "root_state",
         body_rate_key: str = "body_rate",
-        thrust_scale: Optional[float] = None,
+        thrust_scale: float | None = None,
     ) -> None:
         self.num_envs = num_envs
         self.device = torch.device(device)
@@ -129,8 +138,10 @@ class RLBodyRatesController:
         actions = _run_policy_output(self.policy, td, self.action_key)
 
         target_rates = actions[..., :3] * torch.pi  # scale to rad/s
-        thrust_norm = actions[..., 3:4] if actions.shape[-1] > 3 else torch.zeros(
-            (target_rates.shape[0], 1), device=self.device, dtype=target_rates.dtype
+        thrust_norm = (
+            actions[..., 3:4]
+            if actions.shape[-1] > 3
+            else torch.zeros((target_rates.shape[0], 1), device=self.device, dtype=target_rates.dtype)
         )
         thrust_norm = thrust_norm.clamp(-1.0, 1.0)
         thrust = ((thrust_norm + 1.0) / 2.0) * self.weight * self.thrust_to_weight
@@ -162,9 +173,9 @@ class CrazyflieRLVelocityWrapper:
         device: str = "cuda",
         action_key: str = "action",
         root_state_key: str = "root_state",
-        vel_scale: Optional[torch.Tensor] = None,
-        yaw_rate_scale: Optional[Union[float, torch.Tensor]] = None,
-        pid_params: Optional[dict] = None,
+        vel_scale: torch.Tensor | None = None,
+        yaw_rate_scale: float | torch.Tensor | None = None,
+        pid_params: dict | None = None,
     ) -> None:
         self.device = torch.device(device)
         self.root_state_key = root_state_key
@@ -189,7 +200,7 @@ class CrazyflieRLVelocityWrapper:
         wrench = self.wrench_from_command(root_state, cmd)
         return cmd, wrench
 
-    def reset(self, env_ids: Optional[torch.Tensor] = None) -> None:
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
         self.pid.reset(env_ids)
 
     def command(self, td: TensorDictBase) -> torch.Tensor:
@@ -220,8 +231,8 @@ class CrazyflieRLBodyRatesWrapper:
         action_key: str = "action",
         root_state_key: str = "root_state",
         body_rate_key: str = "body_rate",
-        thrust_scale: Optional[float] = None,
-        pid_params: Optional[dict] = None,
+        thrust_scale: float | None = None,
+        pid_params: dict | None = None,
     ) -> None:
         self.device = torch.device(device)
         self.root_state_key = root_state_key
@@ -246,7 +257,7 @@ class CrazyflieRLBodyRatesWrapper:
         wrench = self.wrench_from_command(root_state, cmd)
         return cmd, wrench
 
-    def reset(self, env_ids: Optional[torch.Tensor] = None) -> None:
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
         self.pid.reset(env_ids)
 
     def command(self, td: TensorDictBase) -> torch.Tensor:

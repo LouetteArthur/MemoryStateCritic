@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import math
 import os.path as osp
 
@@ -12,13 +17,13 @@ class Drone_cfg:
 
         if isinstance(drone_params, str):
             cfg_path = osp.join(osp.dirname(__file__), "cfg", f"{drone_params}.yaml")
-            with open(cfg_path, "r") as f:
+            with open(cfg_path) as f:
                 drone_params = yaml.safe_load(f)
 
         self.name = drone_params.get("name", "unknown")
         self.model = drone_params.get("model", "cf_brushless")
 
-        arm_length_value = drone_params.get("arm_length", None)
+        arm_length_value = drone_params.get("arm_length")
         front_arm_length_value = drone_params.get("front_arm_length", arm_length_value)
         back_arm_length_value = drone_params.get("back_arm_length", arm_length_value)
         if arm_length_value is None:
@@ -32,8 +37,8 @@ class Drone_cfg:
         default_angle = math.pi / 4.0
         if "arm_angle_deg" in drone_params:
             default_angle = math.radians(float(drone_params["arm_angle_deg"]))
-        front_arm_angle_value = drone_params.get("front_arm_angle", None)
-        back_arm_angle_value = drone_params.get("back_arm_angle", None)
+        front_arm_angle_value = drone_params.get("front_arm_angle")
+        back_arm_angle_value = drone_params.get("back_arm_angle")
         if front_arm_angle_value is None and "front_arm_angle_deg" in drone_params:
             front_arm_angle_value = math.radians(float(drone_params["front_arm_angle_deg"]))
         if back_arm_angle_value is None and "back_arm_angle_deg" in drone_params:
@@ -65,7 +70,9 @@ class Drone_cfg:
         )
         self.rotor_inertia = torch.tensor(drone_params.get("rotor_inertia", 0.0), device=device, dtype=torch.float32)
 
-        self.motor_speed_min = torch.tensor(drone_params.get("motor_speed_min", 0.0), device=device, dtype=torch.float32)
+        self.motor_speed_min = torch.tensor(
+            drone_params.get("motor_speed_min", 0.0), device=device, dtype=torch.float32
+        )
         motor_speed_max_value = drone_params.get("motor_speed_max", drone_params.get("omega_max", 0.0))
         self.motor_speed_max = torch.tensor(motor_speed_max_value, device=device, dtype=torch.float32)
         self.omega_max = self.motor_speed_max.clone()
@@ -73,11 +80,9 @@ class Drone_cfg:
         self.k_aero_xy = torch.tensor(drone_params.get("k_aero_xy", 0.0), device=device, dtype=torch.float32)
         self.k_aero_z = torch.tensor(drone_params.get("k_aero_z", 0.0), device=device, dtype=torch.float32)
 
-        mass_ref = drone_params.get("mass_ref", drone_params.get("mass", None))
-        inertia_ref = drone_params.get("inertia_ref", drone_params.get("inertia", None))
-        self.mass_ref = (
-            torch.tensor(mass_ref, device=device, dtype=torch.float32) if mass_ref is not None else None
-        )
+        mass_ref = drone_params.get("mass_ref", drone_params.get("mass"))
+        inertia_ref = drone_params.get("inertia_ref", drone_params.get("inertia"))
+        self.mass_ref = torch.tensor(mass_ref, device=device, dtype=torch.float32) if mass_ref is not None else None
         self.inertia_ref = (
             torch.tensor(inertia_ref, device=device, dtype=torch.float32) if inertia_ref is not None else None
         )
@@ -167,8 +172,7 @@ class Drone_cfg:
                 )
             else:
                 print(
-                    f"[INFO] {self.name} mass check: USD={mass_tensor.item():.5f} kg, "
-                    f"ref={self.mass_ref.item():.5f} kg"
+                    f"[INFO] {self.name} mass check: USD={mass_tensor.item():.5f} kg, ref={self.mass_ref.item():.5f} kg"
                 )
         if self.inertia_ref is not None:
             inertia_ref = self.inertia_ref.to(self.device)
@@ -207,11 +211,15 @@ class Propellers:
         self.motor_speed_min = float(drone_cfg.motor_speed_min)
         self.motor_speed_max = float(drone_cfg.motor_speed_max)
         self.tau_m = torch.full((num_envs, 1), float(drone_cfg.tau_m), device=self.device, dtype=torch.float32)
-        self.K_aero = torch.tensor(
-            [float(drone_cfg.k_aero_xy), float(drone_cfg.k_aero_xy), float(drone_cfg.k_aero_z)],
-            device=self.device,
-            dtype=torch.float32,
-        ).view(1, 3).repeat(num_envs, 1)
+        self.K_aero = (
+            torch.tensor(
+                [float(drone_cfg.k_aero_xy), float(drone_cfg.k_aero_xy), float(drone_cfg.k_aero_z)],
+                device=self.device,
+                dtype=torch.float32,
+            )
+            .view(1, 3)
+            .repeat(num_envs, 1)
+        )
         self._update_mixer(torch.arange(num_envs, device=self.device))
 
     def compute_motor_speeds_from_wrench(self, wrench_des: torch.Tensor) -> torch.Tensor:

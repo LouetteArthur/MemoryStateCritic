@@ -1,12 +1,16 @@
-from typing import Any, Mapping, Optional, Tuple, Union
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+from collections.abc import Mapping
+from typing import Any
 
 import gymnasium
 import numpy as np
-from gymnasium import spaces
-
 import torch
 import torch.nn as nn
-
+from gymnasium import spaces
 from skrl.models.torch import GaussianMixin, Model
 from skrl.utils.spaces.torch import unflatten_tensorized_space
 
@@ -35,9 +39,9 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
 
     def __init__(
         self,
-        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        device: Optional[Union[str, torch.device]] = None,
+        observation_space: int | tuple[int] | gymnasium.Space | None = None,
+        action_space: int | tuple[int] | gymnasium.Space | None = None,
+        device: str | torch.device | None = None,
         clip_actions: bool = False,
         clip_log_std: bool = True,
         min_log_std: float = -20,
@@ -45,7 +49,7 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
         reduction: str = "sum",
         initial_log_std: float = 0.0,
         fixed_log_std: bool = False,
-        rnn: Optional[Mapping[str, Any]] = None,
+        rnn: Mapping[str, Any] | None = None,
         num_envs: int = 1,
         **kwargs,
     ) -> None:
@@ -62,8 +66,7 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
                 self._past_actions_size = 0
         else:
             raise ValueError(
-                f"GaussianCNNGRUModel requires Dict observation space with 'image' key, "
-                f"got {type(observation_space)}"
+                f"GaussianCNNGRUModel requires Dict observation space with 'image' key, got {type(observation_space)}"
             )
 
         # CNN encoder — same architecture as skrl_ppo_vision_*_cfg.yaml
@@ -162,7 +165,7 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
         x = features.reshape(batch_size, seq_len, -1)
 
         # --- RNN hidden state handling (same logic as GaussianRNNModel) ---
-        rnn_states = inputs.get("rnn", None)
+        rnn_states = inputs.get("rnn")
         if isinstance(rnn_states, torch.Tensor):
             rnn_states = [rnn_states]
         if rnn_states and len(rnn_states) > 0 and x.dim() == 3:
@@ -171,8 +174,11 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
                 x = x.transpose(0, 1)
         if not rnn_states or len(rnn_states) == 0:
             h0 = torch.zeros(
-                self._rnn_num_layers, x.shape[0], self._rnn_hidden_size,
-                device=x.device, dtype=x.dtype,
+                self._rnn_num_layers,
+                x.shape[0],
+                self._rnn_hidden_size,
+                device=x.device,
+                dtype=x.dtype,
             )
         else:
             h0 = rnn_states[0]
@@ -184,7 +190,7 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
             # BPTT: step through sequence with mid-sequence done resets.
             # At each step, if done_{t} is True the env auto-reset, so we
             # zero the hidden state before processing obs_{t+1}.
-            terminated = inputs.get("terminated", None)
+            terminated = inputs.get("terminated")
             outputs = []
             h = h0
             for t in range(seq_len):
@@ -205,7 +211,7 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
         else:
             # Single step (rollout / stored-state fallback)
             # Reset h0 for done envs
-            terminated = inputs.get("terminated", None)
+            terminated = inputs.get("terminated")
             if terminated is not None:
                 done = terminated
                 if done.dim() > 1:
@@ -224,9 +230,9 @@ class GaussianCNNGRUModel(GaussianMixin, Model):
 
 
 def gaussian_cnn_rnn_model(
-    observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-    action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-    device: Optional[Union[str, torch.device]] = None,
+    observation_space: int | tuple[int] | gymnasium.Space | None = None,
+    action_space: int | tuple[int] | gymnasium.Space | None = None,
+    device: str | torch.device | None = None,
     clip_actions: bool = False,
     clip_log_std: bool = True,
     min_log_std: float = -20,
@@ -234,12 +240,12 @@ def gaussian_cnn_rnn_model(
     reduction: str = "sum",
     initial_log_std: float = 0.0,
     fixed_log_std: bool = False,
-    rnn: Optional[Mapping[str, Any]] = None,
+    rnn: Mapping[str, Any] | None = None,
     return_source: bool = False,
     num_envs: int = 1,
     *args,
     **kwargs,
-) -> Union[Model, str]:
+) -> Model | str:
     """Factory function for the CNN+GRU Gaussian model.
 
     Called by the skrl Runner when the YAML config specifies
@@ -248,14 +254,14 @@ def gaussian_cnn_rnn_model(
     rnn_cfg = rnn or {}
     if return_source:
         return (
-            f"GaussianCNNGRUModel(\n"
-            f"  CNN: Conv2d(in→32, k=8,s=4) → Conv2d(32→64, k=4,s=2) → Conv2d(64→64, k=3,s=1) → Flatten → Linear(128)\n"
-            f"  GRU input: LayerNorm(concat(CNN_features=128, past_actions))\n"
+            "GaussianCNNGRUModel(\n"
+            "  CNN: Conv2d(in→32, k=8,s=4) → Conv2d(32→64, k=4,s=2) → Conv2d(64→64, k=3,s=1) → Flatten → Linear(128)\n"
+            "  GRU input: LayerNorm(concat(CNN_features=128, past_actions))\n"
             f"  GRU: hidden_size={rnn_cfg.get('hidden_size', 256)}, "
             f"num_layers={rnn_cfg.get('num_layers', 1)}, "
             f"sequence_length={rnn_cfg.get('sequence_length', 16)} (orthogonal init)\n"
             f"  Output: Linear({rnn_cfg.get('hidden_size', 256)}, num_actions)\n"
-            f")"
+            ")"
         )
 
     return GaussianCNNGRUModel(

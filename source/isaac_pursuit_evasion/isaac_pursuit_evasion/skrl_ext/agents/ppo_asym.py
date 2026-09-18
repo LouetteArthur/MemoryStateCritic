@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """PPO_ASYM: PPO with asymmetric actor-critic support.
 
 This is a modified copy of ``skrl.agents.torch.ppo.PPO`` that adds a
@@ -13,24 +18,22 @@ Differences from upstream ``skrl.PPO``:
   unbiased/Baisero-Amato-style critics)
 """
 
-from typing import Any, Mapping, Optional, Tuple, Union
-
 import copy
 import itertools
-import gymnasium
-from packaging import version
+from collections.abc import Mapping
+from typing import Any
 
+import gymnasium
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from packaging import version
 from skrl import config, logger
 from skrl.agents.torch import Agent
 from skrl.memories.torch import Memory
 from skrl.models.torch import Model
 from skrl.resources.schedulers.torch import KLAdaptiveLR
 from skrl.utils.spaces.torch import flatten_tensorized_space
-
 
 # fmt: off
 # [start-config-dict-torch]
@@ -49,7 +52,7 @@ PPO_ASYM_DEFAULT_CONFIG = {
     "state_preprocessor": None,             # state preprocessor class (see skrl.resources.preprocessors)
     "state_preprocessor_kwargs": {},        # state preprocessor's kwargs (e.g. {"size": env.observation_space})
     "critic_state_preprocessor": None,      # separate preprocessor for critic states (asymmetric actor-critic)
-    "critic_state_preprocessor_kwargs": {}, # critic state preprocessor's kwargs (e.g. {"size": env.state_space})
+    "critic_state_preprocessor_kwargs": {},  # critic state preprocessor's kwargs (e.g. {"size": env.state_space})
     "value_preprocessor": None,             # value preprocessor class (see skrl.resources.preprocessors)
     "value_preprocessor_kwargs": {},        # value preprocessor's kwargs (e.g. {"size": 1})
 
@@ -91,11 +94,11 @@ class PPO_ASYM(Agent):
     def __init__(
         self,
         models: Mapping[str, Model],
-        memory: Optional[Union[Memory, Tuple[Memory]]] = None,
-        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        device: Optional[Union[str, torch.device]] = None,
-        cfg: Optional[dict] = None,
+        memory: Memory | tuple[Memory] | None = None,
+        observation_space: int | tuple[int] | gymnasium.Space | None = None,
+        action_space: int | tuple[int] | gymnasium.Space | None = None,
+        device: str | torch.device | None = None,
+        cfg: dict | None = None,
     ) -> None:
         """Proximal Policy Optimization with asymmetric actor-critic support
 
@@ -131,8 +134,8 @@ class PPO_ASYM(Agent):
         )
 
         # models
-        self.policy = self.models.get("policy", None)
-        self.value = self.models.get("value", None)
+        self.policy = self.models.get("policy")
+        self.value = self.models.get("value")
 
         # checkpoint models
         self.checkpoint_modules["policy"] = self.policy
@@ -140,7 +143,7 @@ class PPO_ASYM(Agent):
 
         # broadcast models' parameters in distributed runs
         if config.torch.is_distributed:
-            logger.info(f"Broadcasting models' parameters")
+            logger.info("Broadcasting models' parameters")
             if self.policy is not None:
                 self.policy.broadcast_parameters()
                 if self.value is not None and self.policy is not self.value:
@@ -211,7 +214,9 @@ class PPO_ASYM(Agent):
 
         # set up separate critic state preprocessor for asymmetric actor-critic
         if self._critic_state_preprocessor:
-            self._critic_state_preprocessor = self._critic_state_preprocessor(**self.cfg["critic_state_preprocessor_kwargs"])
+            self._critic_state_preprocessor = self._critic_state_preprocessor(
+                **self.cfg["critic_state_preprocessor_kwargs"]
+            )
             self.checkpoint_modules["critic_state_preprocessor"] = self._critic_state_preprocessor
         else:
             # Fall back to state_preprocessor if critic_state_preprocessor not specified
@@ -223,14 +228,18 @@ class PPO_ASYM(Agent):
         else:
             self._value_preprocessor = self._empty_preprocessor
 
-    def init(self, trainer_cfg: Optional[Mapping[str, Any]] = None) -> None:
+    def init(self, trainer_cfg: Mapping[str, Any] | None = None) -> None:
         """Initialize the agent"""
         super().init(trainer_cfg=trainer_cfg)
         self.set_mode("eval")
 
         # Determine critic state size: prefer value model's observation_space (state_space in asymmetric),
         # then critic_state_preprocessor_kwargs, then fall back to actor's observation space
-        critic_state_size = self.value.observation_space if self.value.observation_space != self.observation_space else self.observation_space
+        critic_state_size = (
+            self.value.observation_space
+            if self.value.observation_space != self.observation_space
+            else self.observation_space
+        )
         critic_state_size = self.cfg.get("critic_state_preprocessor_kwargs", {}).get("size", critic_state_size)
 
         # create tensors in memory
@@ -321,14 +330,12 @@ class PPO_ASYM(Agent):
             self._current_next_states = next_states
 
             # Extract critic states from infos for asymmetric actor-critic
-            critic_states = infos.get("critic_states", None) if isinstance(infos, dict) else None
-            next_critic_states = infos.get("next_critic_states", None) if isinstance(infos, dict) else None
+            critic_states = infos.get("critic_states") if isinstance(infos, dict) else None
+            next_critic_states = infos.get("next_critic_states") if isinstance(infos, dict) else None
             # Current critic states should align with current observations
             self._current_critic_states = critic_states if critic_states is not None else states
             # Next critic states are used for bootstrapping
-            self._current_next_critic_states = (
-                next_critic_states if next_critic_states is not None else next_states
-            )
+            self._current_next_critic_states = next_critic_states if next_critic_states is not None else next_states
 
             # reward shaping
             if self._rewards_shaper is not None:
@@ -390,7 +397,6 @@ class PPO_ASYM(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
-        pass
 
     def post_interaction(self, timestep: int, timesteps: int) -> None:
         """Callback called after the interaction with the environment
@@ -466,6 +472,7 @@ class PPO_ASYM(Agent):
             return returns, advantages
 
             # compute returns and advantages using critic states (asymmetric actor-critic)
+
         with torch.no_grad(), torch.autocast(device_type=self._device_type, enabled=self._mixed_precision):
             self.value.train(False)
             # Use critic states for value computation if available

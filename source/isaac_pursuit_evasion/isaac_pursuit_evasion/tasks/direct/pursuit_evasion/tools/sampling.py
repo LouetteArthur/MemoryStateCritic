@@ -1,16 +1,19 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Copyright (c) 2023 Botian Xu
 # SPDX-License-Identifier: MIT
 
 from __future__ import annotations
-
-from typing import Dict, List
 
 import numpy as np
 import torch
 import torch.distributions as D
 
 
-def get_seeds_list(n_seeds: int) -> List[int]:
+def get_seeds_list(n_seeds: int) -> list[int]:
     return np.arange(0, n_seeds, dtype=int).tolist()
 
 
@@ -71,7 +74,7 @@ def min_separation_sampling(
         feasible_points = sampled[has_feasible]
         assign_mask = torch.zeros_like(remaining_mask)
         assign_mask[torch.where(remaining_mask)[0][has_feasible]] = True
-        points[assign_mask] = feasible_points[has_feasible, chosen_idx[has_feasible],:]
+        points[assign_mask] = feasible_points[has_feasible, chosen_idx[has_feasible], :]
         remaining_mask = remaining_mask & ~assign_mask
 
     if not torch.all(torch.norm(points - ref_points, dim=-1) > min_separation):
@@ -79,7 +82,7 @@ def min_separation_sampling(
     return points
 
 
-def policy_sampling(policy_pool: Dict[str, float], num_sampled: int) -> Dict[str, List[int]]:
+def policy_sampling(policy_pool: dict[str, float], num_sampled: int) -> dict[str, list[int]]:
     """Stratified sampling over discrete policy names according to a probability pool."""
     policies = list(policy_pool.keys())
     probs = np.array([policy_pool[p] for p in policies], dtype=float)
@@ -88,7 +91,7 @@ def policy_sampling(policy_pool: Dict[str, float], num_sampled: int) -> Dict[str
         probs /= total
 
     cdf = np.cumsum(probs)
-    assignments: Dict[str, List[int]] = {p: [] for p in policies}
+    assignments: dict[str, list[int]] = {p: [] for p in policies}
     for i in range(num_sampled):
         threshold = (i + 0.5) / num_sampled
         for policy, cum_prob in zip(policies, cdf):

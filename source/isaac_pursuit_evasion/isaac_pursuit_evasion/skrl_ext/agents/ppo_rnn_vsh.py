@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """PPO_RNN_VSH: PPO_RNN with asymmetric actor-critic, V(s, z), and V(s, h) support.
 
 This is a modified copy of ``skrl.agents.torch.ppo.PPO_RNN`` that adds:
@@ -27,25 +32,27 @@ Differences from upstream ``skrl.PPO_RNN``:
 - ``z_theta`` or image inputs threaded through ``self.value.act`` at 3 call sites
 """
 
-from typing import Any, Mapping, Optional, Tuple, Union
-
 import copy
 import itertools
+from collections.abc import Mapping
+from typing import Any
+
 import gymnasium
 import numpy as np
-from packaging import version
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from packaging import version
 from skrl import config, logger
 from skrl.agents.torch import Agent
 from skrl.memories.torch import Memory
 from skrl.models.torch import Model
 from skrl.resources.schedulers.torch import KLAdaptiveLR
-from skrl.utils.spaces.torch import compute_space_size, flatten_tensorized_space, unflatten_tensorized_space
-
+from skrl.utils.spaces.torch import (
+    compute_space_size,
+    flatten_tensorized_space,
+    unflatten_tensorized_space,
+)
 
 # fmt: off
 # [start-config-dict-torch]
@@ -64,7 +71,7 @@ PPO_RNN_VSH_DEFAULT_CONFIG = {
     "state_preprocessor": None,             # state preprocessor class (see skrl.resources.preprocessors)
     "state_preprocessor_kwargs": {},        # state preprocessor's kwargs (e.g. {"size": env.observation_space})
     "critic_state_preprocessor": None,      # separate preprocessor for critic states (asymmetric actor-critic)
-    "critic_state_preprocessor_kwargs": {}, # critic state preprocessor's kwargs (e.g. {"size": env.state_space})
+    "critic_state_preprocessor_kwargs": {},  # critic state preprocessor's kwargs (e.g. {"size": env.state_space})
     "value_preprocessor": None,             # value preprocessor class (see skrl.resources.preprocessors)
     "value_preprocessor_kwargs": {},        # value preprocessor's kwargs (e.g. {"size": 1})
 
@@ -121,11 +128,11 @@ class PPO_RNN_VSH(Agent):
     def __init__(
         self,
         models: Mapping[str, Model],
-        memory: Optional[Union[Memory, Tuple[Memory]]] = None,
-        observation_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        action_space: Optional[Union[int, Tuple[int], gymnasium.Space]] = None,
-        device: Optional[Union[str, torch.device]] = None,
-        cfg: Optional[dict] = None,
+        memory: Memory | tuple[Memory] | None = None,
+        observation_space: int | tuple[int] | gymnasium.Space | None = None,
+        action_space: int | tuple[int] | gymnasium.Space | None = None,
+        device: str | torch.device | None = None,
+        cfg: dict | None = None,
     ) -> None:
         """Proximal Policy Optimization (PPO) with support for Recurrent Neural Networks (RNN, GRU, LSTM, etc.)
 
@@ -161,8 +168,8 @@ class PPO_RNN_VSH(Agent):
         )
 
         # models
-        self.policy = self.models.get("policy", None)
-        self.value = self.models.get("value", None)
+        self.policy = self.models.get("policy")
+        self.value = self.models.get("value")
 
         # checkpoint models
         self.checkpoint_modules["policy"] = self.policy
@@ -170,7 +177,7 @@ class PPO_RNN_VSH(Agent):
 
         # broadcast models' parameters in distributed runs
         if config.torch.is_distributed:
-            logger.info(f"Broadcasting models' parameters")
+            logger.info("Broadcasting models' parameters")
             if self.policy is not None:
                 self.policy.broadcast_parameters()
                 if self.value is not None and self.policy is not self.value:
@@ -212,7 +219,9 @@ class PPO_RNN_VSH(Agent):
 
         # V(s,z) memory-state critic: support both new and legacy config keys
         self._sz_critic = self.cfg["sz_critic"] or bool(self.cfg.get("vsh_critic"))
-        self._sz_z_dim = self.cfg["sz_z_dim"] if self.cfg.get("vsh_actor_hidden_size") is None else self.cfg["vsh_actor_hidden_size"]
+        self._sz_z_dim = (
+            self.cfg["sz_z_dim"] if self.cfg.get("vsh_actor_hidden_size") is None else self.cfg["vsh_actor_hidden_size"]
+        )
         self._sz_z_opp_dim = int(self.cfg.get("sz_z_opp_dim", 0))
         self._opp_id_dim = int(self.cfg.get("opp_id_dim", 0))
         self._opp_id_num = int(self.cfg.get("opp_id_num", 0))
@@ -261,7 +270,9 @@ class PPO_RNN_VSH(Agent):
 
         # set up separate critic state preprocessor for asymmetric actor-critic
         if self._critic_state_preprocessor:
-            self._critic_state_preprocessor = self._critic_state_preprocessor(**self.cfg["critic_state_preprocessor_kwargs"])
+            self._critic_state_preprocessor = self._critic_state_preprocessor(
+                **self.cfg["critic_state_preprocessor_kwargs"]
+            )
             self.checkpoint_modules["critic_state_preprocessor"] = self._critic_state_preprocessor
         else:
             # Fall back to state_preprocessor if critic_state_preprocessor not specified
@@ -281,12 +292,10 @@ class PPO_RNN_VSH(Agent):
             if isinstance(val_obs_space, gymnasium.spaces.Dict) and "state" in val_obs_space.spaces:
                 from skrl.resources.preprocessors.torch import RunningStandardScaler
 
-                self._state_component_scaler = RunningStandardScaler(
-                    size=val_obs_space["state"], device=device
-                )
+                self._state_component_scaler = RunningStandardScaler(size=val_obs_space["state"], device=device)
                 self.checkpoint_modules["state_component_scaler"] = self._state_component_scaler
 
-    def init(self, trainer_cfg: Optional[Mapping[str, Any]] = None) -> None:
+    def init(self, trainer_cfg: Mapping[str, Any] | None = None) -> None:
         """Initialize the agent"""
         super().init(trainer_cfg=trainer_cfg)
         self.set_mode("eval")
@@ -313,15 +322,11 @@ class PPO_RNN_VSH(Agent):
 
             # V(s,z) memory-state critic: store actor GRU hidden state z_theta
             if self._sz_critic:
-                self.memory.create_tensor(
-                    name="z_theta", size=self._sz_z_dim, dtype=torch.float32
-                )
+                self.memory.create_tensor(name="z_theta", size=self._sz_z_dim, dtype=torch.float32)
 
             # V(s,z,z^opp): store opponent hidden state
             if self._sz_z_opp_dim > 0:
-                self.memory.create_tensor(
-                    name="z_opp", size=self._sz_z_opp_dim, dtype=torch.float32
-                )
+                self.memory.create_tensor(name="z_opp", size=self._sz_z_opp_dim, dtype=torch.float32)
 
             # V(..., e(k_t)): store the opponent-identifier integer k_t.
             # Stored as float32 to fit the memory API; cast to long inside the
@@ -514,14 +519,12 @@ class PPO_RNN_VSH(Agent):
             self._current_next_states = next_states
 
             # Extract critic states from infos for asymmetric actor-critic
-            critic_states = infos.get("critic_states", None) if isinstance(infos, dict) else None
-            next_critic_states = infos.get("next_critic_states", None) if isinstance(infos, dict) else None
+            critic_states = infos.get("critic_states") if isinstance(infos, dict) else None
+            next_critic_states = infos.get("next_critic_states") if isinstance(infos, dict) else None
             # Current critic states should align with current observations
             self._current_critic_states = critic_states if critic_states is not None else states
             # Next critic states are used for bootstrapping
-            self._current_next_critic_states = (
-                next_critic_states if next_critic_states is not None else next_states
-            )
+            self._current_next_critic_states = next_critic_states if next_critic_states is not None else next_states
 
             # reward shaping
             if self._rewards_shaper is not None:
@@ -606,9 +609,7 @@ class PPO_RNN_VSH(Agent):
                 # Flatten each env's opponent image to a 1D vector for memory
                 # storage; use the tensor's own batch dim (the agent has no
                 # `num_envs` attribute).
-                sz_kwargs["opp_image"] = self._current_opp_image.reshape(
-                    self._current_opp_image.shape[0], -1
-                )
+                sz_kwargs["opp_image"] = self._current_opp_image.reshape(self._current_opp_image.shape[0], -1)
             if self._current_opp_prev_action is not None:
                 sz_kwargs["opp_prev_action"] = self._current_opp_prev_action
 
@@ -673,7 +674,6 @@ class PPO_RNN_VSH(Agent):
         :param timesteps: Number of timesteps
         :type timesteps: int
         """
-        pass
 
     def post_interaction(self, timestep: int, timesteps: int) -> None:
         """Callback called after the interaction with the environment
@@ -692,7 +692,9 @@ class PPO_RNN_VSH(Agent):
         # write tracking data and checkpoints
         super().post_interaction(timestep, timesteps)
 
-    def _update(self, timestep: int, timesteps: int) -> None:
+    def _update(  # noqa: C901  (PPO update loop; mirrors upstream skrl structure)
+        self, timestep: int, timesteps: int
+    ) -> None:
         """Algorithm's main update step
 
         :param timestep: Current timestep
@@ -948,12 +950,8 @@ class PPO_RNN_VSH(Agent):
                     # compute value loss
                     if self._state_component_scaler is not None:
                         # Dict critic: unflatten from memory, normalize state component
-                        critic_dict = unflatten_tensorized_space(
-                            self.value.observation_space, sampled_critic_states
-                        )
-                        critic_dict["state"] = self._state_component_scaler(
-                            critic_dict["state"], train=not epoch
-                        )
+                        critic_dict = unflatten_tensorized_space(self.value.observation_space, sampled_critic_states)
+                        critic_dict["state"] = self._state_component_scaler(critic_dict["state"], train=not epoch)
                         critic_input = critic_dict
                     elif self._critic_state_preprocessor is not None:
                         critic_input = self._critic_state_preprocessor(sampled_critic_states, train=not epoch)

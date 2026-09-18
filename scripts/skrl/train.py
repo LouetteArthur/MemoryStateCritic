@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
@@ -13,6 +18,7 @@ a more user-friendly way.
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import contextlib
 import math
 import os
 import re
@@ -24,9 +30,9 @@ import types
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable
-from collections.abc import Mapping
+from typing import Any
 
 from isaaclab.app import AppLauncher
 from omegaconf import DictConfig, OmegaConf
@@ -83,11 +89,13 @@ parser.add_argument(
     "--checkpoint-policy-only",
     action="store_true",
     default=False,
-    help="Load only the policy (actor) weights from --checkpoint; re-init the "
-         "value (critic), optimizer, and preprocessors. Use this when warm-starting "
-         "an AMSPB agent from an Experiment-1 checkpoint with a different critic "
-         "architecture (Vsz Exp 1 → SZZ AMSPB, etc.). Without this flag, skrl's "
-         "Agent.load tries to load every sub-state-dict and errors on shape mismatch.",
+    help=(
+        "Load only the policy (actor) weights from --checkpoint; re-init the "
+        "value (critic), optimizer, and preprocessors. Use this when warm-starting "
+        "an AMSPB agent from an Experiment-1 checkpoint with a different critic "
+        "architecture (Vsz Exp 1 → SZZ AMSPB, etc.). Without this flag, skrl's "
+        "Agent.load tries to load every sub-state-dict and errors on shape mismatch."
+    ),
 )
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
 parser.add_argument("--export_io_descriptors", action="store_true", default=False, help="Export IO descriptors.")
@@ -167,8 +175,10 @@ parser.add_argument(
     "--discount-factor",
     type=float,
     default=None,
-    help="Override agent_cfg.agent.discount_factor (gamma). Default per-YAML (0.99). "
-         "Higher (e.g. 0.995) preserves more of the terminal R for late-episode events.",
+    help=(
+        "Override agent_cfg.agent.discount_factor (gamma). Default per-YAML (0.99). "
+        "Higher (e.g. 0.995) preserves more of the terminal R for late-episode events."
+    ),
 )
 
 # append AppLauncher cli args
@@ -221,7 +231,7 @@ from datetime import datetime
 
 import gymnasium as gym
 import numpy as np
-import omni
+import omni  # noqa: F401  (Isaac Sim side-effect import; must load before other omni.* modules)
 import skrl
 import torch
 from packaging import version
@@ -346,18 +356,14 @@ class WandbBridge:
         """Cleanly finalize the wandb run so it doesn't show as 'crashed'."""
         module = self._ensure_module()
         if module and module.run is not None:
-            try:
+            with contextlib.suppress(Exception):
                 module.finish()
-            except Exception:
-                pass
 
     def log(self, data: dict[str, float], step: int | None = None) -> None:
         module = self._ensure_module()
         if module and module.run is not None:
-            try:
+            with contextlib.suppress(Exception):
                 module.log(data, step=step)
-            except Exception:
-                pass
 
     def log_histogram(self, key: str, values, step: int | None = None, title: str | None = None) -> None:
         module = self._ensure_module()
@@ -413,10 +419,8 @@ class WandbBridge:
     def log_video(self, path: Path, key: str, fps: int, step: int | None = None) -> None:
         module = self._ensure_module()
         if module and module.run is not None and path.exists():
-            try:
+            with contextlib.suppress(Exception):
                 module.log({key: module.Video(str(path), format="mp4", caption=path.stem)}, step=step)
-            except Exception:
-                pass
 
     def get_run_name(self) -> str | None:
         """Return the active wandb run name (or id as fallback)."""
@@ -569,7 +573,7 @@ class WandbFPVVideoLogger:
         import torch
 
         # Capture RGB
-        rgb_raw = camera.data.output.get("rgb", None)
+        rgb_raw = camera.data.output.get("rgb")
         if rgb_raw is not None:
             rgb = rgb_raw[0].detach().cpu()
             if rgb.dim() == 3 and rgb.shape[0] in (3, 4) and rgb.shape[0] < rgb.shape[1]:
@@ -583,7 +587,7 @@ class WandbFPVVideoLogger:
             self._frames_rgb.append(self._upscale(rgb.numpy()))
 
         # Capture depth
-        depth_raw = camera.data.output.get("depth", None)
+        depth_raw = camera.data.output.get("depth")
         if depth_raw is not None:
             depth = depth_raw[0].detach().cpu().float()
             if depth.dim() == 3 and depth.shape[-1] == 1:
@@ -595,8 +599,10 @@ class WandbFPVVideoLogger:
             depth_norm = (depth / max_depth).clamp(0.0, 1.0)
             try:
                 import matplotlib
+
                 matplotlib.use("Agg")
                 import matplotlib.cm as cm
+
                 colored = cm.turbo(1.0 - depth_norm.numpy())[:, :, :3]
                 colored_uint8 = (colored * 255).clip(0, 255).astype(np.uint8)
             except ImportError:
@@ -609,7 +615,7 @@ class WandbFPVVideoLogger:
         # class (env 0 pursuer's view → "evader" class), matching what the actor
         # actually sees. Falls back to "any labeled pixel" if the class ID is
         # not yet resolved (very early frames).
-        seg_raw = camera.data.output.get("semantic_segmentation", None)
+        seg_raw = camera.data.output.get("semantic_segmentation")
         if seg_raw is not None:
             seg = seg_raw[0].detach().cpu()
             if seg.dim() == 3 and seg.shape[-1] in (3, 4):
@@ -655,7 +661,9 @@ class WandbFPVVideoLogger:
             video_path = self._video_dir / f"fpv_{name}_step{step}.mp4"
             try:
                 writer = imageio.get_writer(
-                    str(video_path), fps=self._fps, codec="libx264",
+                    str(video_path),
+                    fps=self._fps,
+                    codec="libx264",
                     output_params=["-crf", "18", "-preset", "slow"],
                 )
                 for frame in frames:
@@ -1003,9 +1011,9 @@ def _load_policy_only_from_checkpoint(agent: Any, checkpoint_path: str) -> None:
     nan_keys = [k for k, v in policy_state.items() if hasattr(v, "isnan") and v.isnan().any().item()]
     if nan_keys:
         raise ValueError(
-            f"--checkpoint-policy-only: refusing to load actor weights containing NaN "
+            "--checkpoint-policy-only: refusing to load actor weights containing NaN "
             f"(NaN in {len(nan_keys)}/{len(policy_state)} tensors, e.g. {nan_keys[:3]}). "
-            f"This checkpoint is corrupt — pick a different warm-start source."
+            "This checkpoint is corrupt — pick a different warm-start source."
         )
     # The agent has agent.policy (an nn.Module wrapping the actor) on a CUDA device.
     # load_state_dict casts each tensor to the target device automatically.
@@ -1098,7 +1106,8 @@ def run_policy_evaluation(
     device = getattr(base_env, "device", states.device)
     num_envs = getattr(base_env, "num_envs", states.shape[0])
     episode_returns = torch.zeros(num_envs, device=device, dtype=torch.float32)
-    episode_steps = torch.zeros(num_envs, device=device, dtype=torch.float32)
+    # noqa below: per-env step accumulator, not a loop counter; enumerate does not apply
+    episode_steps = torch.zeros(num_envs, device=device, dtype=torch.float32)  # noqa: SIM113
     prev_lin_vel = base_env._pursuer.data.root_lin_vel_w.detach().clone()
     step_dt = float(base_env.step_dt)
 
@@ -1205,7 +1214,9 @@ else:
 
 
 @hydra_task_config(args_cli.task, agent_cfg_entry_point)
-def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict):
+def main(  # noqa: C901  (single long CLI/setup entry point, kept as one flow for readability)
+    env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict
+):
     """Train with skrl agent."""
     # override configurations with non-hydra CLI arguments
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
@@ -1293,9 +1304,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         agent_block = agent_cfg.get("agent", {}) if isinstance(agent_cfg, dict) else {}
         agent_cls_name = str(agent_block.get("class", "")).upper()
         uses_asymmetric_critic = bool(
-            agent_block.get("critic_state_preprocessor")
-            or "ASYM" in agent_cls_name
-            or agent_block.get("vsh_critic")
+            agent_block.get("critic_state_preprocessor") or "ASYM" in agent_cls_name or agent_block.get("vsh_critic")
         )
         if not uses_asymmetric_critic and env_cfg.asymmetric_actor_critic:
             print(
@@ -1533,8 +1542,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             fps=fpv_fps,
             min_trigger_interval=fpv_min_interval,
         )
-        print(f"[INFO] FPV video logger enabled (episode_length={episode_len}, fps={fpv_fps}, "
-              f"min_interval={fpv_min_interval})")
+        print(
+            f"[INFO] FPV video logger enabled (episode_length={episode_len}, fps={fpv_fps}, "
+            f"min_interval={fpv_min_interval})"
+        )
 
     # augment agent post-interaction hook with performance and media logging
     if hasattr(runner, "agent") and hasattr(runner.agent, "post_interaction"):
@@ -1586,10 +1597,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
         def _write_checkpoint_with_upload(self, timestep: int, timesteps: int) -> None:  # type: ignore[override]
             original_write_checkpoint(timestep, timesteps)
-            try:
+            with contextlib.suppress(Exception):
                 checkpoint_uploader.upload_new()
-            except Exception:
-                pass
             if fpv_logger is not None:
                 fpv_logger.trigger(timestep)
 

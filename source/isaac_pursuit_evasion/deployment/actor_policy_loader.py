@@ -1,11 +1,17 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Lightweight actor-only policy loader for deployment."""
+
 from __future__ import annotations
 
 import os
-
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -19,7 +25,6 @@ from source.isaac_pursuit_evasion.deployment.policy_loader_utils import (
 )
 from source.isaac_pursuit_evasion.deployment.skrl_scaler import load_skrl_scalers
 
-
 _CFG_DIR = Path(__file__).parent / "cfg"
 
 
@@ -32,7 +37,7 @@ class ActorPolicyConfig:
     log_std_init: float = 0.0
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "ActorPolicyConfig":
+    def from_dict(cls, data: Mapping[str, Any]) -> ActorPolicyConfig:
         return cls(
             obs_dim=int(data["obs_dim"]),
             action_dim=int(data["action_dim"]),
@@ -183,6 +188,7 @@ class ActorPolicyCallable:
 # Recurrent (CNN+GRU) actor for vision-based opponent loading
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RecurrentActorConfig:
     """Configuration for loading a CNN+GRU recurrent actor (GaussianCNNGRUModel)."""
@@ -301,9 +307,7 @@ class RecurrentActorPolicyCallable:
     Expects TensorDict with ``image`` (C, H, W) and ``past_actions`` keys.
     """
 
-    def __init__(
-        self, actor: SimpleRecurrentActor, num_envs: int, device: str | torch.device = "cpu"
-    ) -> None:
+    def __init__(self, actor: SimpleRecurrentActor, num_envs: int, device: str | torch.device = "cpu") -> None:
         self.actor = actor
         self.device = torch.device(device)
         self.actor.to(self.device)
@@ -347,7 +351,7 @@ class RecurrentActorPolicyCallable:
         """Return current GRU hidden state (last layer, all envs, detached)."""
         return self._h[-1].detach()
 
-    def reset(self, env_ids: Optional[torch.Tensor] = None) -> None:
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
         """Reset hidden state for specific environments (or all if None)."""
         if env_ids is None:
             self._h.zero_()

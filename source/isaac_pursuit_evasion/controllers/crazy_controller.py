@@ -1,14 +1,16 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
 import math
-import torch
 
+import torch
 from isaaclab.utils import math as math_utils
 
 from ..dynamics.propellers import Drone_cfg
-
 
 DEG2RAD = math.pi / 180.0
 
@@ -72,8 +74,8 @@ def build_crazyflie_pid(
     drone_cfg: Drone_cfg,
     dt: float,
     device: torch.device | str,
-    pid_params: Optional[dict] = None,
-) -> "CrazyfliePIDController":
+    pid_params: dict | None = None,
+) -> CrazyfliePIDController:
     device = torch.device(device)
     pid = CrazyfliePIDController(
         dt=dt,
@@ -98,9 +100,9 @@ class PID:
         kp: torch.Tensor,
         ki: torch.Tensor,
         kd: torch.Tensor,
-        kff: Optional[torch.Tensor],
+        kff: torch.Tensor | None,
         dt: float,
-        integral_limit: Optional[torch.Tensor] = None,
+        integral_limit: torch.Tensor | None = None,
     ) -> None:
         self.kp = kp
         self.ki = ki
@@ -119,7 +121,7 @@ class PID:
             self._integral = torch.zeros_like(error)
             self._prev_error = torch.zeros_like(error)
 
-    def reset(self, mask: Optional[torch.Tensor] = None) -> None:
+    def reset(self, mask: torch.Tensor | None = None) -> None:
         if self._integral is None:
             return
         if mask is None:
@@ -129,7 +131,7 @@ class PID:
         self._integral[mask] = 0.0
         self._prev_error[mask] = 0.0
 
-    def update_error(self, error: torch.Tensor, feedforward: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def update_error(self, error: torch.Tensor, feedforward: torch.Tensor | None = None) -> torch.Tensor:
         self._ensure_state(error)
         self._integral = self._integral + error * self.dt
 
@@ -155,10 +157,10 @@ class CrazyfliePIDController:
     def __init__(
         self,
         dt: float,
-        drone_cfg: Optional[Drone_cfg] = None,
-        num_envs: Optional[int] = None,
+        drone_cfg: Drone_cfg | None = None,
+        num_envs: int | None = None,
         device: str = "cuda",
-        params: Optional[dict] = None,
+        params: dict | None = None,
     ) -> None:
         self.dt = float(dt)
         self.device = torch.device(device)
@@ -198,12 +200,22 @@ class CrazyfliePIDController:
         att_kp = self._resolve_axis_param(params, "att_kp", ("rollKp", "pitchKp", "yawKp"), DEFAULT_GAINS["att"]["kp"])
         att_ki = self._resolve_axis_param(params, "att_ki", ("rollKi", "pitchKi", "yawKi"), DEFAULT_GAINS["att"]["ki"])
         att_kd = self._resolve_axis_param(params, "att_kd", ("rollKd", "pitchKd", "yawKd"), DEFAULT_GAINS["att"]["kd"])
-        att_kff = self._resolve_axis_param(params, "att_kff", ("rollKff", "pitchKff", "yawKff"), DEFAULT_GAINS["att"]["kff"])
+        att_kff = self._resolve_axis_param(
+            params, "att_kff", ("rollKff", "pitchKff", "yawKff"), DEFAULT_GAINS["att"]["kff"]
+        )
 
-        rate_kp = self._resolve_axis_param(params, "rate_kp", ("rollRateKp", "pitchRateKp", "yawRateKp"), DEFAULT_GAINS["rate"]["kp"])
-        rate_ki = self._resolve_axis_param(params, "rate_ki", ("rollRateKi", "pitchRateKi", "yawRateKi"), DEFAULT_GAINS["rate"]["ki"])
-        rate_kd = self._resolve_axis_param(params, "rate_kd", ("rollRateKd", "pitchRateKd", "yawRateKd"), DEFAULT_GAINS["rate"]["kd"])
-        rate_kff = self._resolve_axis_param(params, "rate_kff", ("rollRateKff", "pitchRateKff", "yawRateKff"), DEFAULT_GAINS["rate"]["kff"])
+        rate_kp = self._resolve_axis_param(
+            params, "rate_kp", ("rollRateKp", "pitchRateKp", "yawRateKp"), DEFAULT_GAINS["rate"]["kp"]
+        )
+        rate_ki = self._resolve_axis_param(
+            params, "rate_ki", ("rollRateKi", "pitchRateKi", "yawRateKi"), DEFAULT_GAINS["rate"]["ki"]
+        )
+        rate_kd = self._resolve_axis_param(
+            params, "rate_kd", ("rollRateKd", "pitchRateKd", "yawRateKd"), DEFAULT_GAINS["rate"]["kd"]
+        )
+        rate_kff = self._resolve_axis_param(
+            params, "rate_kff", ("rollRateKff", "pitchRateKff", "yawRateKff"), DEFAULT_GAINS["rate"]["kff"]
+        )
 
         att_integral_limit = self._resolve_angle_vector(
             params, "att_integral_limit", "att_integral_limit_deg", DEFAULT_LIMITS["att_integral"]
@@ -236,7 +248,7 @@ class CrazyfliePIDController:
         )
 
         thrust_cmd_max = float(params.get("thrust_cmd_max", DEFAULT_LIMITS["thrust_cmd_max"]))
-        thrust_cmd_scale = params.get("thrust_cmd_scale", None)
+        thrust_cmd_scale = params.get("thrust_cmd_scale")
         if thrust_cmd_scale is None and self.drone_cfg is not None:
             k_eta = float(getattr(self.drone_cfg, "k_eta", 0.0))
             omega_max = float(getattr(self.drone_cfg, "motor_speed_max", getattr(self.drone_cfg, "omega_max", 0.0)))
@@ -247,7 +259,7 @@ class CrazyfliePIDController:
         self.vel_thrust_scale = float(params.get("vel_thrust_scale", params.get("thrust_scale", 1000.0)))
 
         self._thrust_base_from_params = "thrust_base" in params or "thrustBase" in params
-        thrust_base_cmd = params.get("thrust_base", params.get("thrustBase", None))
+        thrust_base_cmd = params.get("thrust_base", params.get("thrustBase"))
         if thrust_base_cmd is None:
             thrust_base_cmd = (self.mass.item() * 9.81) / max(self.thrust_cmd_scale, 1e-6)
         self.thrust_base_cmd = float(thrust_base_cmd)
@@ -286,7 +298,7 @@ class CrazyfliePIDController:
         self,
         params: dict,
         new_key: str,
-        legacy_keys: Tuple[str, str, str],
+        legacy_keys: tuple[str, str, str],
         default: list,
     ) -> torch.Tensor:
         if new_key in params:
@@ -300,8 +312,8 @@ class CrazyfliePIDController:
     def _resolve_angle_scalar(
         self,
         params: dict,
-        rad_keys: Tuple[str, ...],
-        deg_keys: Tuple[str, ...],
+        rad_keys: tuple[str, ...],
+        deg_keys: tuple[str, ...],
         default: float,
     ) -> float:
         for key in rad_keys:
@@ -327,7 +339,7 @@ class CrazyfliePIDController:
             return values * DEG2RAD
         return torch.as_tensor(default, device=self.device, dtype=torch.float32)
 
-    def set_physical_params(self, mass: Optional[torch.Tensor] = None, inertia_tensor: Optional[torch.Tensor] = None) -> None:
+    def set_physical_params(self, mass: torch.Tensor | None = None, inertia_tensor: torch.Tensor | None = None) -> None:
         if mass is not None:
             self.mass = _as_tensor(mass, self.device, torch.float32).view(())
             if not self._thrust_base_from_params:
@@ -346,10 +358,10 @@ class CrazyfliePIDController:
 
     def set_rate_gains(
         self,
-        rate_kp: Optional[torch.Tensor] = None,
-        rate_ki: Optional[torch.Tensor] = None,
-        rate_kd: Optional[torch.Tensor] = None,
-        env_ids: Optional[torch.Tensor] = None,
+        rate_kp: torch.Tensor | None = None,
+        rate_ki: torch.Tensor | None = None,
+        rate_kd: torch.Tensor | None = None,
+        env_ids: torch.Tensor | None = None,
     ) -> None:
         def _ensure_batched(gains: torch.Tensor) -> torch.Tensor:
             if gains.dim() == 1 and self._num_envs is not None:
@@ -376,7 +388,7 @@ class CrazyfliePIDController:
             self.rate_kd = _ensure_batched(self.rate_kd)
             self.rate_kd[env_ids] = _as_tensor(rate_kd, self.device, torch.float32)
 
-    def get_pid_integrals(self, num_envs: Optional[int] = None) -> torch.Tensor:
+    def get_pid_integrals(self, num_envs: int | None = None) -> torch.Tensor:
         """Return all PID integral states as a flat (num_envs, 9) tensor.
 
         Order: vel_pid integral (3) + att_pid integral (3) + rate integral (3).
@@ -394,7 +406,7 @@ class CrazyfliePIDController:
         rate_int = self._rate_integral if self._rate_integral is not None else torch.zeros(n, 3, device=self.device)
         return torch.cat([vel_int, att_int, rate_int], dim=-1)
 
-    def reset(self, env_ids: Optional[torch.Tensor] = None) -> None:
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
         if env_ids is None:
             self.pos_pid.reset()
             self.vel_pid.reset()
@@ -431,17 +443,17 @@ class CrazyfliePIDController:
     def __call__(
         self,
         root_state: torch.Tensor,
-        target_pos: Optional[torch.Tensor] = None,
-        target_vel: Optional[torch.Tensor] = None,
-        target_attitude: Optional[torch.Tensor] = None,
-        target_body_rates: Optional[torch.Tensor] = None,
-        target_yaw: Optional[torch.Tensor] = None,
-        target_yaw_rate: Optional[torch.Tensor] = None,
-        thrust_cmd: Optional[torch.Tensor] = None,
+        target_pos: torch.Tensor | None = None,
+        target_vel: torch.Tensor | None = None,
+        target_attitude: torch.Tensor | None = None,
+        target_body_rates: torch.Tensor | None = None,
+        target_yaw: torch.Tensor | None = None,
+        target_yaw_rate: torch.Tensor | None = None,
+        thrust_cmd: torch.Tensor | None = None,
         *,
         command_level: str,
         body_rates_in_body_frame: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if root_state.dim() == 1:
             root_state = root_state.unsqueeze(0)
 
@@ -466,8 +478,10 @@ class CrazyfliePIDController:
         self._ensure_buffers(batch)
 
         target_pos = pos if target_pos is None else _expand_to(_as_tensor(target_pos, self.device, pos.dtype), pos)
-        target_vel = torch.zeros_like(lin_vel) if target_vel is None else _expand_to(
-            _as_tensor(target_vel, self.device, lin_vel.dtype), lin_vel
+        target_vel = (
+            torch.zeros_like(lin_vel)
+            if target_vel is None
+            else _expand_to(_as_tensor(target_vel, self.device, lin_vel.dtype), lin_vel)
         )
 
         euler = math_utils.euler_xyz_from_quat(quat)
@@ -526,7 +540,7 @@ class CrazyfliePIDController:
         yaw_sp = ctx["yaw_sp"]
         yaw_sp_scalar = yaw_sp.squeeze(-1)
         self._att_sp[:, 2] = yaw_sp_scalar
-        
+
         if ctx["update_posvel"]:
             yaw_actual_scalar = ctx["yaw_actual"].squeeze(-1)
             c = torch.cos(yaw_actual_scalar)
@@ -561,11 +575,13 @@ class CrazyfliePIDController:
 
     def _cmd_attitude(self, **ctx) -> None:
         yaw_sp = ctx["yaw_sp"]
- 
+
         if ctx["update_att"]:
             target_att = ctx["target_attitude"]
-            att_des = ctx["att_actual"] if target_att is None else _expand_to(
-                _as_tensor(target_att, self.device, ctx["ang_vel"].dtype), ctx["ang_vel"]
+            att_des = (
+                ctx["att_actual"]
+                if target_att is None
+                else _expand_to(_as_tensor(target_att, self.device, ctx["ang_vel"].dtype), ctx["ang_vel"])
             )
             att_des = att_des.clone()
             att_des[..., 2:3] = yaw_sp
@@ -609,11 +625,7 @@ class CrazyfliePIDController:
         rate_meas_dot = (rate_meas - self._prev_rate_meas) / self.dt
         self._prev_rate_meas = rate_meas.clone()
 
-        omega_dot = (
-            self.rate_kp * rate_error
-            + self.rate_ki * self._rate_integral
-            - self.rate_kd * rate_meas_dot
-        )
+        omega_dot = self.rate_kp * rate_error + self.rate_ki * self._rate_integral - self.rate_kd * rate_meas_dot
         if self._inertia_tensor is not None:
             moment = torch.bmm(self._inertia_tensor, omega_dot.unsqueeze(-1)).squeeze(-1)
         else:
@@ -623,8 +635,8 @@ class CrazyfliePIDController:
     def _update_yaw_setpoint(
         self,
         yaw_actual: torch.Tensor,
-        yaw_target_rad: Optional[torch.Tensor],
-        yaw_rate_rad: Optional[torch.Tensor],
+        yaw_target_rad: torch.Tensor | None,
+        yaw_rate_rad: torch.Tensor | None,
     ) -> torch.Tensor:
         if self._yaw_sp is None or self._yaw_sp.shape != yaw_actual.shape:
             self._yaw_sp = yaw_actual.clone()

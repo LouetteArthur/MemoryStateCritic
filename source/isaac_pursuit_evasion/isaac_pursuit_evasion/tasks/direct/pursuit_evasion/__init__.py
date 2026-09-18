@@ -1,3 +1,8 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Task registration for the memory-state-critic ablation (paper Experiment 1).
 
 A single task — ``Ablation-vision-vs-trajectories`` — exposes the five critic variants
@@ -27,10 +32,12 @@ gym.register(
         # default safe variant
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_cfg.yaml",
         # the five critic variants
-        "skrl_ppo_vision_rnn_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_cfg.yaml",          # Vs
-        "skrl_ppo_vision_rnn_sz_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_sz_cfg.yaml",      # Vsz (ours)
-        "skrl_ppo_vision_rnn_sh_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_sh_cfg.yaml",      # Vsh
-        "skrl_ppo_vision_rnn_symmetric_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_symmetric_cfg.yaml",  # Vo
+        "skrl_ppo_vision_rnn_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_cfg.yaml",  # Vs
+        "skrl_ppo_vision_rnn_sz_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_sz_cfg.yaml",  # Vsz (ours)
+        "skrl_ppo_vision_rnn_sh_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_sh_cfg.yaml",  # Vsh
+        "skrl_ppo_vision_rnn_symmetric_cfg_entry_point": (
+            f"{agents.__name__}:skrl_ppo_vision_rnn_symmetric_cfg.yaml"
+        ),  # Vo
         "skrl_ppo_vision_rnn_geles_cfg_entry_point": f"{agents.__name__}:skrl_ppo_vision_rnn_geles_cfg.yaml",  # Vsoa
     },
 )

@@ -1,11 +1,17 @@
+# Copyright (c) 2026, the MemoryStateCritic authors.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Lightweight critic-only policy loader for deployment."""
+
 from __future__ import annotations
 
 import os
-
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -19,7 +25,6 @@ from source.isaac_pursuit_evasion.deployment.policy_loader_utils import (
 )
 from source.isaac_pursuit_evasion.deployment.skrl_scaler import load_skrl_scalers
 
-
 _CFG_DIR = Path(__file__).parent / "cfg"
 
 
@@ -31,7 +36,7 @@ class CriticPolicyConfig:
     activation: str = "elu"
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any]) -> "CriticPolicyConfig":
+    def from_dict(cls, data: Mapping[str, Any]) -> CriticPolicyConfig:
         return cls(
             obs_dim=int(data["obs_dim"]),
             output_dim=int(data.get("output_dim", 1)),
