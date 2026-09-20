@@ -426,8 +426,15 @@ def _plot_metric_panels(
     ncols: int = 2,
     env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
+    num_envs: int | None = None,
 ):
-    """Generic helper: a grid of (metric, arena, title) panels."""
+    """Generic helper: a grid of (metric, arena, title) panels.
+
+    ``num_envs`` scales the x-axis for display: aggregation works in policy
+    timesteps (``env_timesteps`` per run), and each one advances ``num_envs``
+    environments in parallel, so the axis is drawn in total environment steps.
+    The cached series and every CSV stay in policy timesteps.
+    """
     _apply_paper_style()
     nrows = (len(panels) + ncols - 1) // ncols
     fig, axes = plt.subplots(nrows, ncols, figsize=(5.0 * ncols, 3.4 * nrows), sharex=False, sharey=(ylim is not None))
@@ -449,8 +456,11 @@ def _plot_metric_panels(
                 continue
             a = agg[critic]
             color = CRITIC_COLORS[critic]
+            # Aggregation runs in policy timesteps; draw the axis in total
+            # environment steps, which is policy timesteps x parallel envs.
+            x = a["step"] * num_envs if num_envs else a["step"]
             (line,) = ax.plot(
-                a["step"],
+                x,
                 a["mean"],
                 color=color,
                 linewidth=1.8,
@@ -462,7 +472,7 @@ def _plot_metric_panels(
                 lo = a["mean"] - a["std"]
                 hi = a["mean"] + a["std"]
             ax.fill_between(
-                a["step"],
+                x,
                 lo,
                 hi,
                 color=color,
@@ -471,7 +481,7 @@ def _plot_metric_panels(
             )
             legend_lines.setdefault(critic, line)
         ax.set_title(title)
-        ax.set_xlabel("Environment timesteps")
+        ax.set_xlabel("Environment steps")
         ax.xaxis.set_major_formatter(_TICK_FORMATTER)
         if ylim is not None:
             ax.set_ylim(*ylim)
@@ -507,6 +517,7 @@ def plot_reward_evolution(
     output_dir: Path,
     env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
+    num_envs: int | None = None,
 ) -> None:
     panels = [(KEY_REWARD, arena, f"{arena.capitalize()} arena") for arena in ARENAS]
     suptitle = "Pursuer episode return"
@@ -519,6 +530,7 @@ def plot_reward_evolution(
         ncols=2,
         env_timesteps=env_timesteps,
         aggregation=aggregation,
+        num_envs=num_envs,
     )
 
 
@@ -527,6 +539,7 @@ def plot_capture_rate_evolution(
     output_dir: Path,
     env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
+    num_envs: int | None = None,
 ) -> None:
     """Same layout as plot_reward_evolution, but the y-axis is the pursuer
     capture rate (∈ [0, 1]) instead of the per-episode return. Useful as a
@@ -545,6 +558,7 @@ def plot_capture_rate_evolution(
         ncols=2,
         env_timesteps=env_timesteps,
         aggregation=aggregation,
+        num_envs=num_envs,
     )
 
 
@@ -553,6 +567,7 @@ def plot_terminations_wall(
     output_dir: Path,
     env_timesteps: int = 100_000,
     aggregation: str = "mean_std",
+    num_envs: int | None = None,
 ) -> None:
     panels = [
         (KEY_TR_CAPTURE, "wall", "Pursuer capture"),
@@ -570,6 +585,7 @@ def plot_terminations_wall(
         ncols=2,
         env_timesteps=env_timesteps,
         aggregation=aggregation,
+        num_envs=num_envs,
     )
 
 
@@ -1073,6 +1089,16 @@ def main() -> None:
             "--exclude-critics, --env-timesteps and the --seeds* filters."
         ),
     )
+    parser.add_argument(
+        "--num-envs",
+        type=int,
+        default=None,
+        help=(
+            "Parallel environments per run. Labelling only: the x-axis counts policy "
+            "timesteps, and this reports the resulting total environment steps on a "
+            "second axis. The paper used 512."
+        ),
+    )
     parser.add_argument("--cache", default=None, help="pickle path to cache fetched runs")
     parser.add_argument("--samples", type=int, default=500, help="wandb history sample count per run")
     parser.add_argument(
@@ -1189,6 +1215,7 @@ def main() -> None:
         args.aggregation = "iqm_ci"
         args.exclude_critics = "Vo"
         args.env_timesteps = 100_000
+        args.num_envs = 512
         args.seeds = args.seeds_open = args.seeds_wall = None
         print("--paper: IQM + bootstrap CI, V(o) excluded, 100K env timesteps, seeds pinned to PAPER_GRID.")
 
@@ -1286,11 +1313,15 @@ def main() -> None:
     print(f"Aggregation mode: {args.aggregation}")
 
     print("Plotting reward evolution...")
-    plot_reward_evolution(data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation)
+    plot_reward_evolution(
+        data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation, num_envs=args.num_envs
+    )
     print("  reward_evolution.{pdf,png} saved")
 
     print("Plotting capture-rate evolution...")
-    plot_capture_rate_evolution(data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation)
+    plot_capture_rate_evolution(
+        data, output_dir, env_timesteps=args.env_timesteps, aggregation=args.aggregation, num_envs=args.num_envs
+    )
     print("  capture_rate_evolution.{pdf,png} saved")
 
     print("Plotting termination heatmap...")
