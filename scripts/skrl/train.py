@@ -92,8 +92,8 @@ parser.add_argument(
     help=(
         "Load only the policy (actor) weights from --checkpoint; re-init the "
         "value (critic), optimizer, and preprocessors. Use this when warm-starting "
-        "an AMSPB agent from an Experiment-1 checkpoint with a different critic "
-        "architecture (Vsz Exp 1 → SZZ AMSPB, etc.). Without this flag, skrl's "
+        "an actor from a checkpoint trained with a different critic (e.g. the "
+        "memory-state actor under a history-state critic). Without this flag, skrl's "
         "Agent.load tries to load every sub-state-dict and errors on shape mismatch."
     ),
 )
@@ -136,7 +136,7 @@ parser.add_argument(
     "--drone_name",
     type=str,
     default=None,
-    help="Change drone platform (e.g. crazyflie_brushless, crazyflie, vaporx5).",
+    help="Change drone platform (crazyflie or crazyflie_brushless).",
 )
 parser.add_argument(
     "--sensor-mode",
@@ -247,7 +247,7 @@ if version.parse(skrl.__version__) < version.parse(SKRL_VERSION):
 
 if args_cli.ml_framework.startswith("torch"):
     # Use the project-local CustomRunner which registers our custom models
-    # (gaussian_cnn_rnn, vsh_critic) and agents (PPO_ASYM, PPO_RNN_VSH) while
+    # (gaussian_cnn_rnn, memory_state_critic) and agent (PPO_RNN_ASYM) while
     # keeping the vendored skrl copy pristine.
     from isaac_pursuit_evasion.skrl_ext import CustomRunner as Runner
 elif args_cli.ml_framework.startswith("jax"):
@@ -985,10 +985,9 @@ def _load_policy_only_from_checkpoint(agent: Any, checkpoint_path: str) -> None:
     """Load only the policy (actor) weights from a checkpoint into an agent.
 
     Skrl's Agent.load() loads every sub-state-dict (policy / value / optimizer
-    / state_preprocessor / value_preprocessor). When warm-starting an AMSPB
-    agent from an Experiment-1 checkpoint whose critic architecture differs
-    (e.g. Vsz Exp 1 → SZZ AMSPB: same actor, different value head), the full
-    load errors on shape mismatch. This helper loads only the actor weights
+    / state_preprocessor / value_preprocessor). When warm-starting an agent
+    from a checkpoint whose critic architecture differs (same actor, different
+    value head), the full load errors on shape mismatch. This helper loads only the actor weights
     via Module.load_state_dict(..., strict=False) and re-initialises the
     critic from random init.
 
@@ -1304,7 +1303,9 @@ def main(  # noqa: C901  (single long CLI/setup entry point, kept as one flow fo
         agent_block = agent_cfg.get("agent", {}) if isinstance(agent_cfg, dict) else {}
         agent_cls_name = str(agent_block.get("class", "")).upper()
         uses_asymmetric_critic = bool(
-            agent_block.get("critic_state_preprocessor") or "ASYM" in agent_cls_name or agent_block.get("vsh_critic")
+            agent_block.get("critic_state_preprocessor")
+            or "ASYM" in agent_cls_name
+            or agent_block.get("memory_state_critic")
         )
         if not uses_asymmetric_critic and env_cfg.asymmetric_actor_critic:
             print(

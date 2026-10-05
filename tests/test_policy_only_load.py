@@ -5,8 +5,8 @@
 
 """Unit tests for the policy-only checkpoint loader (`--checkpoint-policy-only`).
 
-The loader exists to warm-start AMSPB agents from Experiment-1 checkpoints
-whose critic architecture mismatches the AMSPB agent's critic. It must:
+The loader warm-starts an actor from a checkpoint whose critic architecture
+differs from the new agent's critic. It must:
 
 - Load only the policy state_dict (not value, not optimizer).
 - Reject corrupt checkpoints (NaN actor weights).

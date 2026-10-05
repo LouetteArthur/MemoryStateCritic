@@ -5,15 +5,12 @@
 
 seed: 42
 
-# CNN+GRU vision PPO — actor uses CNN(depth) + GRU for temporal memory
-# Actor: Conv2d encoder → Linear(128) → GRU(128) → actions
-# Critic: MLP on privileged state only (asymmetric actor-critic, V(s))
+# State-only critic V(s)
+# Actor:  Conv2d encoder -> Linear(128) -> GRU(256) -> actions
+# Critic: MLP on the privileged state only (asymmetric actor-critic)
 #
-# This is the "plain RNN" baseline: the critic does NOT receive the actor's
-# hidden state (contrast with skrl_ppo_vision_rnn_sz_cfg.yaml which adds the
-# detached actor hidden state z^θ — the memory-state critic).  The GRU
-# replaces the past-actions buffer: temporal context is maintained in the
-# hidden state.
+# The critic does NOT receive the actor's hidden state; contrast with
+# skrl_ppo_memory_state_critic_cfg.yaml, which adds the detached z^a.
 
 models:
   separate: True
@@ -94,7 +91,7 @@ agent:
 
     wandb: true
     wandb_kwargs:
-      project: "ppo_vision_rnn"
+      project: "ppo_state_critic"
       entity: ""
       name: ""
 

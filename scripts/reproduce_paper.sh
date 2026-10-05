@@ -7,12 +7,12 @@
 # Runs the exact critic x arena x seed grid behind Figures 3 and 4: 160 runs at
 # 512 envs x 100K timesteps = 5.12e7 environment steps each.
 #
-#   critic  paper symbol   seeds (identical in both arenas)
-#   ------  -------------  ---------------------------------------------------
-#   Vs      V(s)           1 2 3 4 5 6 7 8 9 11 12 13 15 17 19 21 27 37 42 123
-#   Vsh     V(s, z^c)      (same)
-#   Vsz     V(s, z^a)      (same)
-#   Vsoa    V(s, o, a)     (same)
+#   critic             paper symbol   seeds (identical in both arenas)
+#   -----------------  -------------  ----------------------------------------------------
+#   state              V(s)           1 2 3 4 5 6 7 8 9 11 12 13 15 17 19 21 27 37 42 123
+#   history-state      V(s, z^c)      (same)
+#   memory-state       V(s, z^a)      (same)
+#   observation-state  V(s, o, a)     (same)
 #
 # Every cell runs the same twenty seeds, so the comparison between critics is
 # paired. The May 2026 submission used a smaller, unbalanced grid; the
@@ -25,7 +25,7 @@
 #   ./scripts/reproduce_paper.sh --dry-run          # print the 160 commands
 #   ./scripts/reproduce_paper.sh                    # run everything
 #   ./scripts/reproduce_paper.sh --arena open       # open arena only (80 runs)
-#   ./scripts/reproduce_paper.sh --critics "Vsz Vsh"
+#   ./scripts/reproduce_paper.sh --critics "memory-state history-state"
 #
 # Environment:
 #   WANDB_ENTITY    your wandb entity (required for logging; unset = anonymous)
@@ -60,14 +60,14 @@ export WANDB_PROJECT="${WANDB_PROJECT:-critic_ablation}"
 # Every cell runs the same twenty seeds: 4 critics x 2 arenas x 20 = 160 runs.
 PAPER_SEEDS="1 2 3 4 5 6 7 8 9 11 12 13 15 17 19 21 27 37 42 123"
 GRID=(
-    "Vs|open|$PAPER_SEEDS"
-    "Vsh|open|$PAPER_SEEDS"
-    "Vsz|open|$PAPER_SEEDS"
-    "Vsoa|open|$PAPER_SEEDS"
-    "Vs|wall|$PAPER_SEEDS"
-    "Vsh|wall|$PAPER_SEEDS"
-    "Vsz|wall|$PAPER_SEEDS"
-    "Vsoa|wall|$PAPER_SEEDS"
+    "state|open|$PAPER_SEEDS"
+    "history-state|open|$PAPER_SEEDS"
+    "memory-state|open|$PAPER_SEEDS"
+    "observation-state|open|$PAPER_SEEDS"
+    "state|wall|$PAPER_SEEDS"
+    "history-state|wall|$PAPER_SEEDS"
+    "memory-state|wall|$PAPER_SEEDS"
+    "observation-state|wall|$PAPER_SEEDS"
 )
 
 _wanted() {  # _wanted <value> <space-separated filter>; empty filter = keep all

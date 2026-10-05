@@ -13,9 +13,8 @@ from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectorie
 )
 
 from ..dynamics.propellers import Drone_cfg
-from .config import load_controller_config
+from .config import drone_cfg_name, load_controller_config
 from .crazy_controller import build_crazyflie_pid
-from .lee_controller import drone_cfg_name
 
 
 class APFEvaderController:
@@ -29,7 +28,6 @@ class APFEvaderController:
         device: str = "cuda",
         command_heading: bool = False,
         controller_cfg: dict | None = None,
-        lee_controller_cfg: dict | None = None,
         arena_min: torch.Tensor | None = None,
         arena_max: torch.Tensor | None = None,
         wall_cfg: WallConfig | None = None,

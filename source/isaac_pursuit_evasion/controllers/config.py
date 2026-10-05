@@ -8,6 +8,11 @@ from pathlib import Path
 import yaml
 
 
+def drone_cfg_name(cfg) -> str:
+    """Lower-case drone name used to select ``<controller>_<drone>.yaml``."""
+    return str(getattr(cfg, "name", "crazyflie")).lower()
+
+
 def load_controller_config(controller_name: str, drone_name: str) -> dict:
     """Load a YAML configuration for a given controller and drone."""
     cfg_dir = Path(__file__).with_name("cfg")

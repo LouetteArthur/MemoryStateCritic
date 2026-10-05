@@ -6,132 +6,14 @@
 from __future__ import annotations
 
 import torch
-from isaaclab.assets import ArticulationData
 
 from source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories.trajectory import (
     WallConfig,
 )
 
 from ..dynamics.propellers import Drone_cfg
-from .config import load_controller_config
+from .config import drone_cfg_name, load_controller_config
 from .crazy_controller import build_crazyflie_pid
-from .lee_controller import drone_cfg_name
-
-
-class PDPursuerController:
-    """Velocity-based PID pursuit controller that outputs velocity and yaw commands."""
-
-    def __init__(
-        self,
-        num_envs: int,
-        drone_cfg: Drone_cfg,
-        dt: float,
-        total_frames: int = 1,
-        command_heading: bool = False,
-        device: str = "cuda",
-        controller_cfg: dict | None = None,
-        lee_controller_cfg: dict | None = None,
-    ) -> None:
-        self.device = device
-        self.num_envs = num_envs
-        self.dt = dt
-        self.total_frames = max(1, total_frames)
-
-        self.command_heading = command_heading
-
-        if controller_cfg is None:
-            controller_cfg = load_controller_config("pd_pursuer", drone_cfg_name(drone_cfg))
-
-        def to_tensor(values):
-            return torch.as_tensor(values, device=device, dtype=torch.float32).flatten()
-
-        self.kp = to_tensor(controller_cfg["kp"])
-        self.kd = to_tensor(controller_cfg["kd"])
-        self.derivative_limit = to_tensor(controller_cfg["derivative_limit"])
-        self.filter_alpha = float(controller_cfg.get("filter_alpha", 0.0))
-        self.max_speed = to_tensor(controller_cfg["max_speed"])
-
-        self.curriculum_enabled = False
-        self.start_speed = self.max_speed.clone()
-
-        self.e_p = torch.zeros(num_envs, 3, device=device)
-        self.e_d = torch.zeros_like(self.e_p)
-        self.speed_limit = self.max_speed.unsqueeze(0).repeat(num_envs, 1)
-
-    def to(self, device: str) -> PDPursuerController:
-        attrs = ("kp", "kd", "derivative_limit", "max_speed", "start_speed")
-        for attr in attrs:
-            setattr(self, attr, getattr(self, attr).to(device))
-        self.e_p = self.e_p.to(device)
-        self.e_d = self.e_d.to(device)
-        self.speed_limit = self.speed_limit.to(device)
-        self.device = device
-        return self
-
-    def set_curriculum(self, enabled: bool, start_fraction: float = 0.1):
-        self.curriculum_enabled = enabled
-        if enabled:
-            self.start_speed = self.max_speed * start_fraction
-        else:
-            self.start_speed = self.max_speed.clone()
-
-    def reset(self, env_ids: torch.Tensor, frame: int = 0):
-        env_ids = env_ids.to(dtype=torch.long, device=self.device)
-        self.e_p[env_ids] = 0.0
-        self.e_d[env_ids] = 0.0
-        current_speed = self._compute_speed_limit(frame)
-        self.speed_limit[env_ids] = current_speed[env_ids]
-
-    def _compute_speed_limit(self, frame: int) -> torch.Tensor:
-        if not self.curriculum_enabled:
-            return self.max_speed.unsqueeze(0).expand(self.num_envs, -1)
-        progress = min(max(frame, 0), self.total_frames) / self.total_frames
-        speed = self.start_speed + (self.max_speed - self.start_speed) * progress
-        return speed.unsqueeze(0).expand(self.num_envs, -1)
-
-    def _pd(self, state_pursuer: torch.Tensor, state_evader: torch.Tensor) -> torch.Tensor:
-        pos_p_w = state_pursuer[..., :3]
-        pos_e_w = state_evader[..., :3]
-
-        prev_error = self.e_p.clone()
-        self.e_p = pos_e_w - pos_p_w
-
-        derivative = (self.e_p - prev_error) / self.dt
-        derivative = torch.clamp(derivative, -self.derivative_limit, self.derivative_limit)
-        self.e_d = torch.lerp(self.e_d, derivative, self.filter_alpha)
-
-        u_cmd = self.kp * self.e_p + self.kd * self.e_d
-        u_cmd = torch.clamp(u_cmd, -self.speed_limit, self.speed_limit)
-        return u_cmd
-
-    def forward(
-        self,
-        state_pursuer: torch.Tensor,
-        state_evader: torch.Tensor,
-    ):
-        vel_cmd = self._pd(state_pursuer, state_evader)
-        if self.command_heading:
-            yaw_cmd = torch.atan2(vel_cmd[..., 1], vel_cmd[..., 0]).unsqueeze(-1)
-        else:
-            yaw_cmd = None
-        if yaw_cmd is None:
-            yaw_cmd = torch.zeros((vel_cmd.shape[0], 1), device=vel_cmd.device, dtype=vel_cmd.dtype)
-        return torch.cat((vel_cmd, yaw_cmd), dim=-1)
-
-
-class PDPursuerWrapper:
-    def __init__(
-        self,
-        pd_controller: PDPursuerController,
-    ):
-        self.pd_controller = pd_controller
-
-    def forward(
-        self,
-        data_pursuer: ArticulationData,
-        data_evader: ArticulationData,
-    ):
-        return self.pd_controller(data_pursuer.root_state_w, data_evader.root_state_w)
 
 
 class FRPNPursuerController:

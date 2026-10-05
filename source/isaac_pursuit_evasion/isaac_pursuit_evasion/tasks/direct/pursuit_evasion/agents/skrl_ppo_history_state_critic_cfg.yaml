@@ -5,15 +5,13 @@
 
 seed: 42
 
-# CNN+GRU vision PPO with V(s, h) history-state critic
-# Actor: Conv2d encoder -> Linear(128) -> GRU(256) -> actions
-# Critic: own Conv2d+GRU(256) over learner's (o,a) stream, concat with
+# History-state critic V(s, z^c) — the baseline (Baisero & Amato, 2022)
+# Actor:  Conv2d encoder -> Linear(128) -> GRU(256) -> actions
+# Critic: own Conv2d+GRU(256) over the (o, a) stream -> z^c, concat with
 #         privileged state -> MLP -> value
 #
-# The critic has its OWN CNN and GRU, separate from the actor's.
-# It processes the same observation-action stream but with independent
-# weights, giving it access to a learned summary of the history h.
-# BPTT flows through both actor and critic RNNs independently.
+# The critic has its OWN CNN and GRU, separate from the actor's, trained by
+# the value loss alone. BPTT flows through both RNNs independently.
 
 models:
   separate: True
@@ -52,7 +50,7 @@ memory:
 
 # PPO_RNN agent configuration
 agent:
-  class: PPO_RNN_SH
+  class: PPO_RNN_ASYM
 
   rollouts: 32
   learning_epochs: 8
@@ -90,9 +88,9 @@ agent:
   rewards_shaper_scale: 0.1
   time_limit_bootstrap: False
 
-  sh_critic: True
-  sh_image_shape: [2, 64, 64]
-  sh_past_actions_size: 4
+  history_state_critic: True
+  history_image_shape: [2, 64, 64]
+  history_past_actions_size: 4
 
   experiment:
     directory: "training"
@@ -102,7 +100,7 @@ agent:
 
     wandb: true
     wandb_kwargs:
-      project: "ppo_vision_rnn_sh"
+      project: "ppo_history_state_critic"
       entity: ""
       name: ""
 

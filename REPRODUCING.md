@@ -1,52 +1,53 @@
 # Reproducing the paper
 
 This document covers **Experiment 1** of *"Memory-State Critic for Asymmetric
-Actor-Critic with Application to Vision-Based Pursuit-Evasion"* (EWRL 2026):
+Actor-Critic with Application to Vision-Based Pursuit-Evasion"* (EWRL 2026,
+[OpenReview](https://openreview.net/forum?id=iKiJUMvYT7)):
 the critic ablation behind Figures 3 and 4 and Table 1.
 
-Everything else in this repository — the AMSPB population-based pipeline, the
-Elo tournament, and the Crazyswarm sim-to-real deployment — belongs to separate
-work and is **not** part of this paper.
+The population-based self-play pipeline, the Elo tournament and the Crazyswarm
+sim-to-real deployment belong to separate work and are not shipped here.
 
 ---
 
-## 1. Critic naming: paper ↔ code
+## 1. The critics in the code
 
-The code labels predate the paper's notation and do not read the way you would
-guess. **`Vsz` is the paper's contribution; `Vsh` is the baseline it is compared
-against.** Getting these backwards silently runs the wrong experiment.
+Every critic runs on the same agent, `PPO_RNN_ASYM`
+(`skrl_ext/agents/ppo_rnn_asym.py`). What separates them is the critic model,
+selected by the `value.class` field of the agent YAML, and one flag:
 
-| Paper (Table 1) | Symbol | Code label | Critic model | Agent class | Agent YAML | Extra flag |
-|---|---|---|---|---|---|---|
-| Observation-state | `V(s,o,a)` | `Vsoa` | `DeterministicMixin` (Dict input) | `PPO_RNN_ASYM` | `skrl_ppo_vision_rnn_geles_cfg.yaml` | `--unbiased-critic` |
-| State-only | `V(s)` | `Vs` | `DeterministicMixin` | `PPO_RNN_ASYM` | `skrl_ppo_vision_rnn_cfg.yaml` | — |
-| History-state | `V(s,z^c)` | `Vsh` | `HistoryStateCriticMixin` | `PPO_RNN_SH` | `skrl_ppo_vision_rnn_sh_cfg.yaml` | — |
-| **Memory-state (ours)** | `V(s,z^a)` | `Vsz` | `SzCriticMixin` | `PPO_RNN_SZ` | `skrl_ppo_vision_rnn_sz_cfg.yaml` | — |
+| Paper (Table 1) | Symbol | Label | Critic model (`value.class`) | Agent YAML | Extra flag |
+|---|---|---|---|---|---|
+| State-only | `V(s)` | `state` | `DeterministicMixin` | `skrl_ppo_state_critic_cfg.yaml` | — |
+| History-state | `V(s,z^c)` | `history-state` | `HistoryStateCriticMixin` | `skrl_ppo_history_state_critic_cfg.yaml` | — |
+| **Memory-state (ours)** | `V(s,z^a)` | `memory-state` | `MemoryStateCriticMixin` | `skrl_ppo_memory_state_critic_cfg.yaml` | — |
+| Observation-state | `V(s,o,a)` | `observation-state` | `DeterministicMixin` (Dict input) | `skrl_ppo_observation_state_critic_cfg.yaml` | `--unbiased-critic` |
 
-**Where the contribution actually lives.** `PPO_RNN_SZ` and `PPO_RNN_SH` are
-*aliases of the same agent*, `PPO_RNN_VSH`
-(`skrl_ext/agents/ppo_rnn_vsh.py`). What separates the memory-state critic from
-the history-state critic is the **critic model**, selected by the `value.class`
-field of the YAML:
+The `--agent` entry point is the YAML name with `.yaml` replaced by `_entry_point`,
+e.g. `skrl_ppo_memory_state_critic_cfg_entry_point`. The label is what
+`run_ablation.sh --critics` takes and what wandb run names start with.
 
-- `SzCriticMixin` (`skrl_ext/models/vsh_critic.py`) — an MLP over
-  `[privileged_state ‖ detach(z^a)]`. The `detach` is the stop-gradient of
-  Figure 1; there is no second recurrent encoder.
-- `HistoryStateCriticMixin` (`skrl_ext/models/history_state_critic.py`) — owns a
+- `MemoryStateCriticMixin` (`skrl_ext/models/memory_state_critic.py`) is an MLP
+  over `[privileged_state ‖ z^a]`, where the agent detaches `z^a` before passing
+  it. That `.detach()` is the stop-gradient of Figure 1; there is no second
+  recurrent encoder. The agent enables it with `memory_state_critic: True`.
+- `HistoryStateCriticMixin` (`skrl_ext/models/history_state_critic.py`) owns a
   second CNN+GRU that encodes `(image, past_actions)` into `z^c` from the value
-  loss alone.
+  loss alone. The agent enables it with `history_state_critic: True`.
 
-Searching for a file named `ppo_rnn_sz.py` will not find anything; start from
-`vsh_critic.py`.
+[`minimal/memory_state_critic.py`](minimal/memory_state_critic.py) is the same
+idea in one short file of plain PyTorch, with no simulator.
 
-The repository also contains `skrl_ppo_vision_rnn_symmetric_cfg.yaml` (label
-`Vo`), `..._shh_cfg.yaml` and `..._szz_cfg.yaml`. None of these appear in the
-paper; `--paper` mode excludes them.
+`skrl_ppo_symmetric_critic_cfg.yaml` (label `symmetric`, `V(o,a)`) is also
+provided but is not in the paper; `--paper` mode excludes it.
 
-The memory-state critic itself is `SzCriticMixin` plus `PPO_RNN_SZ` under
-`source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/`. The stop-gradient
-on `z^a` (Figure 1, right) is what distinguishes it from a jointly-trained
-encoder.
+**Older names.** The runs behind the paper were launched before the code adopted
+the paper's notation, so their wandb names and `figures/paper/runs.pkl` use
+`Vs`, `Vsh`, `Vsz`, `Vsoa` and `Vo` for the five labels above, in that order.
+Those names, the old entry points (`skrl_ppo_vision_rnn_sz_cfg_entry_point`, ...),
+the old agent classes (`PPO_RNN_SZ`, `PPO_RNN_SH`, `PPO_RNN_VSH`) and the old
+config keys (`sz_critic`, `sh_critic`, ...) are all still accepted. Note that
+`Vsz` is the memory-state critic (ours) and `Vsh` the history-state baseline.
 
 ---
 
@@ -76,16 +77,16 @@ The grid exactly as it was run:
 
 | Critic | Paper symbol | Open arena | Wall arena |
 |---|---|---|---|
-| `Vs` | `V(s)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
-| `Vsh` | `V(s,z^c)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
-| `Vsz` | `V(s,z^a)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
-| `Vsoa` | `V(s,o,a)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `state` | `V(s)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `history-state` | `V(s,z^c)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `memory-state` | `V(s,z^a)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
+| `observation-state` | `V(s,o,a)` | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 | 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123 |
 
 **160 runs total**: 4 critics x 2 arenas x 20 seeds, the same seed set in every
 cell, so the comparison between critics is paired.
 
 (The May 2026 submission used a smaller, unbalanced grid — five seeds for most
-cells, three for `V(s,o,a)`, and a different open-arena seed set for `Vsz`. The
+cells, three for `V(s,o,a)`, and a different open-arena seed set for `V(s,z^a)`. The
 camera-ready replaces it entirely; nothing from that grid is reused.)
 
 Aggregation is the interquartile mean (Agarwal et al., 2022), recomputed
@@ -100,16 +101,16 @@ spread of the retained seeds.
 ## 4. Running it
 
 ```bash
-# Preview the full 36-run plan without launching anything
-./scripts/run_ablation.sh --dry-run
+# Preview the full 160-run plan without launching anything
+./scripts/reproduce_paper.sh --dry-run
 
 # Run everything (sequential; ~5.5 h/run on an RTX 4090 → ~37 GPU-days)
-WANDB_ENTITY=<your-entity> ./scripts/run_ablation.sh
+WANDB_ENTITY=<your-entity> ./scripts/reproduce_paper.sh
 
 # Split across machines
-WANDB_ENTITY=<your-entity> ./scripts/run_ablation.sh --arena open
-WANDB_ENTITY=<your-entity> ./scripts/run_ablation.sh --arena wall
-WANDB_ENTITY=<your-entity> ./scripts/run_ablation.sh --critics "Vsz Vsh"
+WANDB_ENTITY=<your-entity> ./scripts/reproduce_paper.sh --arena open
+WANDB_ENTITY=<your-entity> ./scripts/reproduce_paper.sh --arena wall
+WANDB_ENTITY=<your-entity> ./scripts/reproduce_paper.sh --critics "memory-state history-state"
 ```
 
 A single run, if you only want to see the memory-state critic train:
@@ -117,7 +118,7 @@ A single run, if you only want to see the memory-state critic train:
 ```bash
 python scripts/skrl/train.py \
     --task=Ablation-vision-vs-trajectories \
-    --agent=skrl_ppo_vision_rnn_sz_cfg_entry_point \
+    --agent=skrl_ppo_memory_state_critic_cfg_entry_point \
     --sensor-mode=both --num-past-actions=1 \
     --seed=42 --num_envs=512 --total_frames=51200000 \
     --headless --enable_cameras
@@ -171,7 +172,7 @@ python scripts/plot_ablation_results.py --paper \
     --output-dir figures/reproduced
 ```
 
-`--paper` pins IQM aggregation, excludes `Vo`, sets the 100K-timestep axis, and
+`--paper` pins IQM aggregation, excludes `symmetric`, sets the 100K-timestep axis, and
 filters to the seed grid in `PAPER_GRID` (`scripts/plot_ablation_results.py`).
 It warns about any cell where runs are missing.
 
@@ -235,7 +236,7 @@ export WANDB_PROJECT=<the project holding the rest of the grid>
 # $HOME/ablation_done, which is /root inside the container and is lost when it exits --
 # an interrupted sweep would then redo every finished cell.
 export ABLATION_DONE_DIR=/workspace/MemoryStateCritic/logs/ablation_done
-./scripts/run_ablation.sh --arena open --critics "Vs Vsz Vsh" --seeds "<seeds>"
+./scripts/run_ablation.sh --arena open --critics "state memory-state history-state" --seeds "<seeds>"
 ```
 
 `PYTHONPATH` needs no attention: `docker/entrypoint.sh` installs the vendored skrl fork and the
@@ -260,7 +261,7 @@ set (no editable install pointing back at a development checkout):
   `--enable-obstacles --discount-factor=0.999`. (Plain
   `scripts/run_ablation.sh --dry-run` emits 10 — five critics x two arenas at
   its single default seed; it is the per-cell launcher, not the paper grid.)
-- **Training.** `Vsz` and `Vsh`, open arena, seed 42, 512 envs, run for 30,000
+- **Training.** Memory-state and history-state critics, open arena, seed 42, 512 envs, run for 30,000
   of the paper's 100,000 environment timesteps (~1 h each).
 - **Architecture, from the trained checkpoints.** The memory-state critic is an
   MLP with input width 320 = 64 privileged state + 256 actor GRU hidden, 123 K
@@ -269,55 +270,18 @@ set (no editable install pointing back at a development checkout):
   Figure 1 realised in weights. The actor in both is CNN(2x64x64) ->
   Linear(128) -> concat 4 past-action dims -> GRU(256) -> 4 actions, matching
   Appendix A.
-- **Learning curve.** The `Vsz` run lies inside the envelope of the paper's five
-  cached open-arena `Vsz` seeds at 90% of logged points.
-- **Comparative claim.** At equal budget, `Vsz` led `Vsh` at every checkpoint
-  and crossed return 0 at 2,100 timesteps versus 19,800 for `Vsh`.
+- **Learning curve.** The memory-state run lies inside the envelope of the
+  paper's five cached open-arena memory-state seeds at 90% of logged points.
+- **Comparative claim.** At equal budget, the memory-state critic led the
+  history-state critic at every checkpoint and crossed return 0 at 2,100
+  timesteps versus 19,800.
+
+These checks predate the renaming described in section 1, which also removed
+code no experiment used. The renaming was checked without a GPU: the shipped
+figures regenerate pixel-identically, and the unit tests pass. The training
+check above has not been rerun on the renamed tree.
 
 One seed is not the paper's evidence — Figures 3 and 4 are interquartile means
 over twenty seeds, and single runs are noisy early in training. These checks
 establish that the released tree runs and behaves as described, not that a
 single re-run rederives the paper's aggregates.
-
----
-
-## 9. Known limitations
-
-Stated here rather than left for a reader to discover.
-
-- **Camera field-of-view gate.** The visibility flag `v_t` in the reward, and the
-  corresponding flag in the privileged state, gate on the camera's forward
-  half-space rather than on the rendered 120-degree frame
-  (`pursuit_evasion_env.py`, `_K_RHOANGLE`): the spawn config is a
-  `PinholeCameraCfg`, which has no `fisheye_max_fov`, so the lookup falls back to
-  180 degrees. The occlusion test is unaffected and correct. The gate is
-  identical for all four critics, so the comparison in the paper is unaffected,
-  but a reader reproducing the reward should know the implemented gate is wider
-  than the rendered frame.
-
-- **Termination-reason attribution.** `_get_dones` assigns one reason per episode
-  by a fixed priority. When several conditions hold on the same step -- a capture
-  on the final step, or a capture simultaneous with a wall contact -- the episode
-  is attributed to the later-assigned reason, so capture is slightly
-  under-counted relative to the crash and timeout outcomes. Win-rate *totals*
-  (capture + evader out-of-bounds + evader wall) are unaffected in the common
-  cases; the per-reason breakdown in Figure 4 is. The convention is the same for
-  every critic. Measured timeout rate in the wall arena is 0.000, so the
-  capture/timeout collision does not arise there.
-
-- **Time-limit confound.** Episodes are 250 steps, `time_limit_bootstrap` is
-  false, and the remaining time is not part of the 64-dimensional privileged
-  state. A recurrent critic can count steps from its memory; a state-only critic
-  cannot. Part of the measured gap between `V(s)` and the recurrent critics may
-  therefore reflect time-awareness rather than history aliasing.
-
-- **Unused code.** The task registry exposes one task,
-  `Ablation-vision-vs-trajectories`. `pursuit_evasion_cfg.py` still defines many
-  factory functions (`pretrain_*`, `bench_*`, `amspb_*`) that nothing registers,
-  and `deployment/` is retained because the paper's import path reaches it. They
-  are inherited from the parent repository and are not part of this experiment.
-
-- **Pretrained-opponent artifacts.** The auxiliary tasks referenced wandb
-  artifacts in a private project. They now resolve from `PE_ARTIFACT_ENTITY` /
-  `PE_ARTIFACT_PROJECT` and are `None` when unset. No experiment in the paper
-  uses them.

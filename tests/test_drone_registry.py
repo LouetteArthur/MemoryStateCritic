@@ -201,14 +201,11 @@ class TestDroneRegistry:
         names = reg.available_drones()
         assert "crazyflie_brushless" in names
         assert "crazyflie" in names
-        assert "vaporx5" in names
 
     def test_aliases_resolve(self):
         reg = _import_registry()
         assert reg.get_drone_config("cf_brushless").name == "crazyflie_brushless"
         assert reg.get_drone_config("cf2x").name == "crazyflie"
-        assert reg.get_drone_config("vapor_x5").name == "vaporx5"
-        assert reg.get_drone_config("vapor").name == "vaporx5"
 
     def test_case_insensitive_lookup(self):
         reg = _import_registry()
@@ -223,7 +220,7 @@ class TestDroneRegistry:
 
     def test_drone_config_has_required_fields(self):
         reg = _import_registry()
-        for name in ("crazyflie_brushless", "crazyflie", "vaporx5"):
+        for name in ("crazyflie_brushless", "crazyflie"):
             dc = reg.get_drone_config(name)
             assert dc.pursuer_cfg is not None
             assert dc.evader_cfg is not None
@@ -249,7 +246,7 @@ class TestDroneRegistry:
 
     def test_prop_joint_patterns_are_list_of_lists(self):
         reg = _import_registry()
-        for name in ("crazyflie_brushless", "crazyflie", "vaporx5"):
+        for name in ("crazyflie_brushless", "crazyflie"):
             dc = reg.get_drone_config(name)
             for pattern_group in dc.prop_joint_patterns:
                 assert isinstance(pattern_group, list)
@@ -265,53 +262,6 @@ class TestDroneRegistry:
 class TestCfgDroneNameWiring:
     """Verify that config builder functions propagate drone_name correctly."""
 
-    def _patched_cfg_module(self):
-        cfg_mod = _import_cfg_module()
-        # Patch load_controller_config at the module level where it was imported
-        m = mock.MagicMock(return_value={"mocked": True})
-        cfg_mod.load_controller_config = m
-        return cfg_mod, m
-
-    def test_pretrain_frpn_sets_drone_name(self):
-        cfg_mod, _ = self._patched_cfg_module()
-        cfg = cfg_mod.pretrain_frpn_vs_rl_cfg(num_envs=4, drone_name="crazyflie")
-        assert cfg.drone_name == "crazyflie"
-        # Controller config should NOT be pre-loaded (deferred to env init)
-        frpn_spec = cfg.pursuer_controllers[0]
-        assert frpn_spec.config is None
-        assert frpn_spec.config_overrides is not None
-        assert "curriculum" in frpn_spec.config_overrides
-
-    def test_bench_frpn_vs_apf_sets_drone_name(self):
-        cfg_mod, _ = self._patched_cfg_module()
-        cfg = cfg_mod.bench_frpn_vs_apf_cfg(num_envs=4, drone_name="vaporx5")
-        assert cfg.drone_name == "vaporx5"
-        # No pre-loaded controller config
-        assert cfg.pursuer_controllers[0].config is None
-        assert cfg.evader_controllers[0].config is None
-
-    def test_bench_slowfrpn_sets_drone_name(self):
-        cfg_mod, _ = self._patched_cfg_module()
-        cfg = cfg_mod.bench_slowfrpn_vs_apf_cfg(num_envs=4, drone_name="crazyflie")
-        assert cfg.drone_name == "crazyflie"
-        assert cfg.pursuer_controllers[0].config is None
-        assert cfg.evader_controllers[0].config is None
-
-    def test_bench_frpn_vs_hover_sets_drone_name(self):
-        cfg_mod, _ = self._patched_cfg_module()
-        cfg = cfg_mod.bench_frpn_vs_hover_cfg(num_envs=4, drone_name="vaporx5")
-        assert cfg.drone_name == "vaporx5"
-
-    def test_bench_frpn_vs_trajectories_sets_drone_name(self):
-        cfg_mod, _ = self._patched_cfg_module()
-        cfg = cfg_mod.bench_frpn_vs_trajectories_cfg(num_envs=4, drone_name="crazyflie")
-        assert cfg.drone_name == "crazyflie"
-
-    def test_bench_rl_vs_apf_sets_drone_name(self):
-        cfg_mod, _ = self._patched_cfg_module()
-        cfg = cfg_mod.bench_rl_vs_apf_cfg(num_envs=4, drone_name="vaporx5")
-        assert cfg.drone_name == "vaporx5"
-
     def test_default_drone_name_is_crazyflie_brushless(self):
         """Verify the default drone_name value from source code."""
         src = (
@@ -321,13 +271,13 @@ class TestCfgDroneNameWiring:
         assert 'drone_name: str = "crazyflie_brushless"' in src
 
     def test_ablation_config_sets_drone_name_crazyflie(self):
-        cfg_mod, _ = self._patched_cfg_module()
+        cfg_mod = _import_cfg_module()
         cfg = cfg_mod.ablation_vision_vs_trajectories_cfg(num_envs=4)
         assert cfg.drone_name == "crazyflie"
 
     def test_ablation_action_mode_override(self):
         """Verify action mode can be overridden on the ablation config."""
-        cfg_mod, _ = self._patched_cfg_module()
+        cfg_mod = _import_cfg_module()
         cfg = cfg_mod.ablation_vision_vs_trajectories_cfg(num_envs=4)
         # Default is body rates
         assert cfg.agent_action_mode == "body_rates"
@@ -357,9 +307,7 @@ class TestCfgDroneNameWiring:
         src = runner_path.read_text()
         # The _generate_models method must check agent_class before swapping
         assert "agent_class in _asym_agents" in src
-        # The set must include all three asymmetric agent classes
-        assert '"ppo_asym"' in src
-        assert '"ppo_rnn_vsh"' in src
+        # The set must include the asymmetric recurrent agent
         assert '"ppo_rnn_asym"' in src
 
 

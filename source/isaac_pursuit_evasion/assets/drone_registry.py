@@ -153,35 +153,5 @@ def _register_builtins() -> None:
         )
     )
 
-    # --- VaporX5 ---
-    from source.isaac_pursuit_evasion.assets.vaporX5 import VaporX5
-    from source.isaac_pursuit_evasion.assets.vaporX5 import (
-        fpv_camera_center_line as vx5_fpv_camera_center_line,
-    )
-    from source.isaac_pursuit_evasion.assets.vaporX5 import (
-        fpv_camera_cfg as vx5_fpv_camera_cfg,
-    )
-    from source.isaac_pursuit_evasion.assets.vaporX5 import (
-        transform_camera_line as vx5_transform_camera_line,
-    )
-
-    register_drone(
-        DroneConfig(
-            name="vaporx5",
-            pursuer_cfg=VaporX5,
-            evader_cfg=VaporX5,
-            body_name="body",
-            prop_joint_patterns=[
-                ["m[1-4]_joint"],
-                [".*prop.*"],
-            ],
-            fpv_camera_cfg_fn=vx5_fpv_camera_cfg,
-            fpv_camera_center_line_fn=vx5_fpv_camera_center_line,
-            transform_camera_line_fn=vx5_transform_camera_line,
-            dynamics_name="vaporX5",
-            aliases=("vapor_x5", "vapor"),
-        )
-    )
-
 
 _register_builtins()

@@ -20,6 +20,3 @@ from isaaclab_tasks.utils import import_packages
 _BLACKLIST_PKGS = ["utils", ".mdp"]
 # Import all configs in this package
 import_packages(__name__, _BLACKLIST_PKGS)
-
-# Register additional tasks defined outside the standard task tree so editable installs work anywhere.
-import source.isaac_pursuit_evasion.isaac_pursuit_evasion.tasks.direct.trajectories  # noqa: F401

@@ -4,6 +4,7 @@ title: "MemoryStateCritic: vision-based quadrotor pursuit-evasion for asymmetric
 type: software
 license: BSD-3-Clause
 repository-code: "https://github.com/LouetteArthur/MemoryStateCritic"
+url: "https://openreview.net/forum?id=iKiJUMvYT7"
 authors:
   - family-names: Louette
     given-names: Arthur
@@ -24,6 +25,9 @@ preferred-citation:
   title: "Memory-State Critic for Asymmetric Actor-Critic with Application to Vision-Based Pursuit-Evasion"
   year: 2026
   collection-title: "European Workshop on Reinforcement Learning (EWRL)"
+  conference:
+    name: "European Workshop on Reinforcement Learning (EWRL 2026)"
+  url: "https://openreview.net/forum?id=iKiJUMvYT7"
   authors:
     - family-names: Louette
       given-names: Arthur

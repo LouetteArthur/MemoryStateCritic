@@ -7,7 +7,7 @@ set -e
 # (→ system /usr/bin/python3.11). Train scripts call `python`, so we MUST
 # install editable packages into that interpreter's site-packages or the
 # train will fall back to the upstream pip-installed skrl whose obs routing
-# breaks our PPO_RNN_VSH/SZZ/SHH critics with a (8196 vs 64) tensor shape
+# breaks our asymmetric (PPO_RNN_ASYM) critics with a (8196 vs 64) tensor shape
 # mismatch in the critic_state_preprocessor.
 PY="$(command -v python)"
 echo "[entrypoint] Using python: $PY"

@@ -5,14 +5,14 @@
 
 seed: 42
 
-# Symmetric CNN+GRU vision PPO — actor and critic use same observation
-# Actor: Conv2d encoder → Linear(128) → GRU(256) → actions (temporal memory)
-# Critic: Conv2d encoder → Linear(128) + past_actions → MLP → value (no privileged state)
+# Observation-state critic V(s, o, a) — no memory, the control
+# Actor:  Conv2d encoder -> Linear(128) -> GRU(256) -> actions
+# Critic: CNN(image) + MLP(past_actions) + MLP(state) -> concat -> MLP -> value
 #
-# This is the symmetric RNN baseline: the critic sees only what the actor sees
-# (image + past_actions), with NO privileged state vector.
-# Contrast with skrl_ppo_vision_rnn_cfg.yaml (asym V(s)) where the critic
-# receives the full privileged state.
+# The critic receives the privileged state, the actor's current image and its
+# past action, but no recurrent memory (as in Geles et al., "Demonstrating
+# Agile Flight from Pixels without State Estimation", RSS 2024). Requires
+# --unbiased-critic. The state component is normalised inside PPO_RNN_ASYM.
 
 models:
   separate: True
@@ -28,10 +28,11 @@ models:
       hidden_size: 256
       num_layers: 1
       sequence_length: 16  # BPTT across 16-step sequences
-  value:
+  value:  # Unbiased critic: V(s, o, a) — state + image + past_actions
     class: DeterministicMixin
     clip_actions: False
     network:
+      # CNN encoder for image (same architecture as actor CNN)
       - name: cnn
         input: STATES["image"]
         layers:
@@ -44,12 +45,19 @@ models:
         input: cnn
         layers: [128]
         activations: elu
+      # MLP for past actions
       - name: past_actions_net
         input: STATES["past_actions"]
         layers: [32]
         activations: elu
+      # MLP for privileged state vector (normalized by state_component_scaler)
+      - name: state_net
+        input: STATES["state"]
+        layers: [128, 64]
+        activations: elu
+      # Combined head: image features + past_actions features + state features
       - name: net
-        input: concatenate([cnn_linear, past_actions_net])
+        input: concatenate([cnn_linear, past_actions_net, state_net])
         layers: [256, 128, 64]
         activations: elu
     output: ONE
@@ -61,9 +69,9 @@ memory:
   memory_size: -1
 
 
-# PPO_RNN agent — handles BPTT for the GRU actor, non-RNN critic is fine
+# PPO_RNN_ASYM agent — handles BPTT for GRU actor + asymmetric Dict critic
 agent:
-  class: PPO_RNN
+  class: PPO_RNN_ASYM
 
   rollouts: 32
   learning_epochs: 8
@@ -80,6 +88,8 @@ agent:
 
   state_preprocessor: null  # Actor images — no standard scaling
   state_preprocessor_kwargs: null
+  critic_state_preprocessor: null  # Dict critic — state component normalized internally
+  critic_state_preprocessor_kwargs: null
   value_preprocessor: RunningStandardScaler
   value_preprocessor_kwargs: null
 
@@ -107,7 +117,7 @@ agent:
 
     wandb: true
     wandb_kwargs:
-      project: "ppo_vision_rnn_symmetric"
+      project: "ppo_observation_state_critic"
       entity: ""
       name: ""
 

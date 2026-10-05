@@ -5,14 +5,13 @@
 
 seed: 42
 
-# CNN+GRU vision PPO with V(s, z) memory-state critic
-# Actor: Conv2d encoder -> Linear(128) -> GRU(256) -> actions
-# Critic: MLP(privileged_state || detach(z_theta)) -> value
+# Memory-state critic V(s, z^a) — the paper's contribution
+# Actor:  Conv2d encoder -> Linear(128) -> GRU(256) -> actions
+# Critic: MLP(privileged_state || detach(z^a)) -> value
 #
-# z_theta is the actor's GRU hidden state (z = f_theta(h), where h is the
-# observation-action history). The critic receives both the privileged state
-# vector AND the detached z_theta, giving it access to temporal context
-# without back-propagating gradients into the actor's recurrence.
+# z^a = f_theta(h) is the actor's GRU hidden state. The critic receives the
+# privileged state AND the detached z^a, so the value loss is never
+# back-propagated into the actor's recurrence and there is no second encoder.
 
 models:
   separate: True
@@ -29,7 +28,7 @@ models:
       num_layers: 1
       sequence_length: 16  # BPTT across 16-step sequences
   value:
-    class: SzCriticMixin
+    class: MemoryStateCriticMixin
     clip_actions: False
     actor_hidden_size: 256
     layers: [256, 128, 64]
@@ -43,7 +42,7 @@ memory:
 
 # PPO_RNN agent configuration
 agent:
-  class: PPO_RNN_SZ
+  class: PPO_RNN_ASYM
 
   rollouts: 32
   learning_epochs: 8
@@ -81,8 +80,8 @@ agent:
   rewards_shaper_scale: 0.1
   time_limit_bootstrap: False
 
-  sz_critic: True
-  sz_z_dim: 256
+  memory_state_critic: True
+  memory_dim: 256
 
   experiment:
     directory: "training"
@@ -92,7 +91,7 @@ agent:
 
     wandb: true
     wandb_kwargs:
-      project: "ppo_vision_rnn_sz"
+      project: "ppo_memory_state_critic"
       entity: ""
       name: ""
 

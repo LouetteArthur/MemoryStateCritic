@@ -1,15 +1,15 @@
 #!/bin/bash
 # =============================================================================
-# Critic Ablation — 5 critics × 2 arenas (Experiment 1)
+# Critic ablation — 5 critics × 2 arenas
 #
 # All actors: CNN+GRU with sensor="both" (depth + segmap), 1 past action.
 #
-# Critic variants:
-#   1. Vs       — V(s):     MLP on privileged state
-#   2. Vsz      — V(s,z):   MLP on state + detached actor GRU hidden z
-#   3. Vsh      — V(s,h):   Critic-side CNN+GRU on (image, past_actions) + state
-#   4. Vo       — V(o,a):   CNN critic on same observation as actor (symmetric)
-#   5. Vsoa     — V(s,o,a): Dict critic on state + image + past_actions (Geles et al.)
+# Critic variants (label — paper symbol — critic input):
+#   state              V(s)        privileged state
+#   history-state      V(s, z^c)   state + critic-side CNN+GRU on (image, past action)  (baseline)
+#   memory-state       V(s, z^a)   state + detached actor GRU hidden state              (ours)
+#   observation-state  V(s, o, a)  state + image + past action, no memory
+#   symmetric          V(o, a)     actor observations only (not in the paper)
 #
 # Arenas:      open, wall
 # Total:       5 × 2 = 10 experiments per seed
@@ -19,7 +19,7 @@
 #   ./scripts/run_ablation.sh --dry-run          # print commands without running
 #   ./scripts/run_ablation.sh --seeds "42 123"   # multiple seeds
 #   ./scripts/run_ablation.sh --arena open       # open map only (5 runs/seed)
-#   ./scripts/run_ablation.sh --arena wall       # wall map only (5 runs/seed)
+#   ./scripts/run_ablation.sh --critics "memory-state history-state"
 #   NUM_ENVS=256 ./scripts/run_ablation.sh       # for 12 GB GPUs
 # =============================================================================
 set -euo pipefail
@@ -27,14 +27,14 @@ set -euo pipefail
 # Defaults
 SEEDS="${SEEDS:-42}"
 NUM_ENVS="${NUM_ENVS:-512}"
-TOTAL_FRAMES="${TOTAL_FRAMES:-51200000}"    # 100K timesteps × 512 envs = 5.12e7 (réglage du papier)
+TOTAL_FRAMES="${TOTAL_FRAMES:-51200000}"    # 100K timesteps × 512 envs = 5.12e7 (the paper's setting)
 PER_RUN_TIMEOUT="${PER_RUN_TIMEOUT:-32400}" # 9 h per run; PXR/USD races hang Isaac Sim periodically
 TASK="Ablation-vision-vs-trajectories"
 WANDB_PROJECT="${WANDB_PROJECT:-critic_ablation}"
 WANDB_ENTITY="${WANDB_ENTITY:-}"
 DRY_RUN=false
 ARENA_FILTER=""  # "" = both, "open" or "wall"
-CRITIC_FILTER=""  # "" = all 5, else space-separated subset of {Vs Vsz Vsh Vo Vsoa}
+CRITIC_FILTER=""  # "" = all 5, else a space-separated subset of the labels below
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -52,29 +52,41 @@ done
 
 # Critic variants: (label, --agent entry point, extra_flags)
 # All actors are CNN+GRU with sensor=both and 1 past action.
-# Vsoa (Geles) requires --unbiased-critic for Dict critic state.
+# observation-state requires --unbiased-critic for its Dict critic state.
 ALL_CRITICS=(
-    "Vs|skrl_ppo_vision_rnn_cfg_entry_point|"
-    "Vsz|skrl_ppo_vision_rnn_sz_cfg_entry_point|"
-    "Vsh|skrl_ppo_vision_rnn_sh_cfg_entry_point|"
-    "Vo|skrl_ppo_vision_rnn_symmetric_cfg_entry_point|"
-    "Vsoa|skrl_ppo_vision_rnn_geles_cfg_entry_point|--unbiased-critic"
+    "state|skrl_ppo_state_critic_cfg_entry_point|"
+    "history-state|skrl_ppo_history_state_critic_cfg_entry_point|"
+    "memory-state|skrl_ppo_memory_state_critic_cfg_entry_point|"
+    "observation-state|skrl_ppo_observation_state_critic_cfg_entry_point|--unbiased-critic"
+    "symmetric|skrl_ppo_symmetric_critic_cfg_entry_point|"
 )
 
-# Apply optional --critics filter (e.g. --critics "Vs Vsz Vsh")
+# Labels from before the code adopted the paper's notation; still accepted.
+_canonical_label() {
+    case "$1" in
+        Vs) echo state ;;
+        Vsh) echo history-state ;;
+        Vsz) echo memory-state ;;
+        Vsoa) echo observation-state ;;
+        Vo) echo symmetric ;;
+        *) echo "$1" ;;
+    esac
+}
+
+# Apply optional --critics filter (e.g. --critics "state memory-state")
 if [ -n "$CRITIC_FILTER" ]; then
     CRITICS=()
     for spec in "${ALL_CRITICS[@]}"; do
         IFS='|' read -r label _ _ <<< "$spec"
         for keep in $CRITIC_FILTER; do
-            if [ "$label" = "$keep" ]; then
+            if [ "$label" = "$(_canonical_label "$keep")" ]; then
                 CRITICS+=("$spec")
                 break
             fi
         done
     done
     if [ ${#CRITICS[@]} -eq 0 ]; then
-        echo "ERROR: --critics='$CRITIC_FILTER' matched none of: Vs Vsz Vsh Vo Vsoa" >&2
+        echo "ERROR: --critics='$CRITIC_FILTER' matched none of: state history-state memory-state observation-state symmetric" >&2
         exit 1
     fi
 else
@@ -88,7 +100,7 @@ SENSOR="both"
 # obstacle-aware planning — captures take 0.6s but require route choice
 # around the wall, which the agent cannot value-bootstrap under gamma=0.99).
 # Open arena uses the YAML default gamma=0.99 (~50-step typical catch, tight
-# horizon gives cleaner PPO value learning — gamma>=0.995 broke Vsz here).
+# horizon gives cleaner PPO value learning — gamma>=0.995 broke the memory-state critic here).
 if [ "$ARENA_FILTER" = "open" ]; then
     ARENAS=("open|")
 elif [ "$ARENA_FILTER" = "wall" ]; then

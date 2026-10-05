@@ -4,15 +4,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-# Copyright (c) 2026, the MemoryStateCritic authors.
-# All rights reserved.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-
 """Generate paper-quality ablation plots from wandb logs.
 
 Pulls completed runs matching the critic-ablation naming convention
-``<Critic>_<arena>_s<seed>`` (e.g. ``Vsz_wall_s42``) from a wandb
+``<critic>_<arena>_s<seed>`` (e.g. ``memory-state_wall_s42``) from a wandb
 project, aggregates mean / std across seeds, and saves three figures
 suitable for the paper:
 
@@ -73,7 +68,18 @@ _TICK_FORMATTER = mticker.FuncFormatter(_si_step_formatter)
 # Configuration: critic order, labels, colours, metric keys
 # --------------------------------------------------------------------------
 
-CRITICS = ["Vs", "Vsh", "Vsz", "Vsoa"]
+CRITICS = ["state", "history-state", "memory-state", "observation-state"]
+
+# Critic labels from before the code adopted the paper's notation. The runs
+# behind the paper were logged under these names, and figures/paper/runs.pkl
+# stores them; both are mapped to the labels above on load.
+LEGACY_CRITIC_LABELS = {
+    "Vs": "state",
+    "Vsh": "history-state",
+    "Vsz": "memory-state",
+    "Vsoa": "observation-state",
+    "Vo": "symmetric",
+}
 
 # The (critic, arena) -> seeds grid used for Figures 3 and 4. Every cell runs
 # the same twenty seeds, so the comparison between critics is paired: 4 critics
@@ -81,24 +87,23 @@ CRITICS = ["Vs", "Vsh", "Vsz", "Vsoa"]
 # unbalanced grid of 5/5/5/3 seeds; the camera-ready replaces it entirely.)
 PAPER_SEEDS: list[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 17, 19, 21, 27, 37, 42, 123]
 PAPER_GRID: dict[tuple[str, str], set[int]] = {
-    (critic, arena): set(PAPER_SEEDS) for critic in ("Vs", "Vsh", "Vsz", "Vsoa") for arena in ("open", "wall")
+    (critic, arena): set(PAPER_SEEDS) for critic in CRITICS for arena in ("open", "wall")
 }
 
-# Labels follow the paper's notation update: critic-side recurrent encoding is
-# z^c (was h); actor-memory encoding is z^a (was z). V(o) is no longer shown.
+# Legend labels in the paper's notation. The symmetric V(o, a) critic is not shown.
 CRITIC_LABELS = {
-    "Vs": r"$V(s)$",
-    "Vsh": r"$V(s, z^c)$",
-    "Vsz": r"$V(s, z^a)$",
-    "Vsoa": r"$V(s, o, a)$",
+    "state": r"$V(s)$",
+    "history-state": r"$V(s, z^c)$",
+    "memory-state": r"$V(s, z^a)$",
+    "observation-state": r"$V(s, o, a)$",
 }
 
 # Colour-blind-friendly palette (Wong 2011, reordered)
 CRITIC_COLORS = {
-    "Vs": "#0072B2",  # blue
-    "Vsh": "#009E73",  # green   — history-state V(s, z^c)
-    "Vsz": "#E69F00",  # orange  — memory-state V(s, z^a)
-    "Vsoa": "#CC79A7",  # reddish purple
+    "state": "#0072B2",  # blue
+    "history-state": "#009E73",  # green
+    "memory-state": "#E69F00",  # orange
+    "observation-state": "#CC79A7",  # reddish purple
 }
 
 ARENAS = ["wall", "open"]
@@ -135,7 +140,14 @@ METRIC_KEYS = [
     KEY_TR_TIMEOUT,
 ]
 
-NAME_RE = re.compile(r"^(Vs|Vsz|Vsh|Vo|Vsoa)_(wall|open)_s(\d+)$")
+NAME_RE = re.compile(
+    r"^(state|history-state|memory-state|observation-state|symmetric|Vs|Vsz|Vsh|Vo|Vsoa)_(wall|open)_s(\d+)$"
+)
+
+
+def canonical_critic(label: str) -> str:
+    """Map a critic label, current or legacy, to its current name."""
+    return LEGACY_CRITIC_LABELS.get(label, label)
 
 
 @dataclass
@@ -189,7 +201,7 @@ def fetch_runs(
         if skip:
             n_skip_config += 1
             continue
-        key = (match.group(1), match.group(2), int(match.group(3)))
+        key = (canonical_critic(match.group(1)), match.group(2), int(match.group(3)))
         prev = latest.get(key)
         if prev is None or run.created_at > prev.created_at:
             latest[key] = run
@@ -1011,7 +1023,7 @@ def tag_runs(entity: str, project: str) -> None:
         match = NAME_RE.match(run.name or "")
         if match is None:
             continue
-        critic, arena, seed = match.group(1), match.group(2), int(match.group(3))
+        critic, arena, seed = canonical_critic(match.group(1)), match.group(2), int(match.group(3))
         new_tags = sorted({*(run.tags or []), f"critic:{critic}", f"arena:{arena}", f"seed:{seed}"})
         run.tags = new_tags
         run.config["critic"] = critic
@@ -1084,7 +1096,7 @@ def main() -> None:
         action="store_true",
         help=(
             "Reproduce the paper's Figures 3 and 4 exactly: IQM with 95% "
-            "bootstrap CIs, V(o) excluded, 100K environment timesteps, and the "
+            "bootstrap CIs, the symmetric V(o, a) critic excluded, 100K environment timesteps, and the "
             "20-seed grid in PAPER_GRID. Overrides --aggregation, "
             "--exclude-critics, --env-timesteps and the --seeds* filters."
         ),
@@ -1189,7 +1201,7 @@ def main() -> None:
         type=str,
         default="",
         help=(
-            "Comma-separated critics to drop from the plot (e.g. 'Vsoa,Vo'). "
+            "Comma-separated critics to drop from the plot (e.g. 'observation-state,symmetric'). "
             "Useful for in-progress runs where some critics don't yet have "
             "enough seeds to aggregate cleanly."
         ),
@@ -1213,11 +1225,11 @@ def main() -> None:
 
     if args.paper:
         args.aggregation = "iqm_ci"
-        args.exclude_critics = "Vo"
+        args.exclude_critics = "symmetric"
         args.env_timesteps = 100_000
         args.num_envs = 512
         args.seeds = args.seeds_open = args.seeds_wall = None
-        print("--paper: IQM + bootstrap CI, V(o) excluded, 100K env timesteps, seeds pinned to PAPER_GRID.")
+        print("--paper: IQM + bootstrap CI, V(o, a) excluded, 100K env timesteps, seeds pinned to PAPER_GRID.")
 
     cache_hit = bool(args.cache) and Path(args.cache).exists()
     if not cache_hit and not args.entity:
@@ -1243,6 +1255,8 @@ def main() -> None:
         print(f"Loading cached runs from {args.cache}")
         with open(args.cache, "rb") as fh:
             data = pickle.load(fh)
+        for rd in data:
+            rd.critic = canonical_critic(rd.critic)
     else:
         print(f"Fetching runs from {args.entity}/{args.project}...")
         data = fetch_runs(
@@ -1260,7 +1274,7 @@ def main() -> None:
         raise SystemExit("No usable runs found. Check entity/project and run names.")
 
     if args.exclude_critics:
-        excluded = {c.strip() for c in args.exclude_critics.split(",") if c.strip()}
+        excluded = {canonical_critic(c.strip()) for c in args.exclude_critics.split(",") if c.strip()}
         before = len(data)
         data = [rd for rd in data if rd.critic not in excluded]
         global CRITICS

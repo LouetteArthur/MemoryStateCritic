@@ -5,14 +5,12 @@
 
 seed: 42
 
-# CNN+GRU vision PPO with Geles-style unbiased critic V(s, o, a)
-# Actor: Conv2d encoder → Linear(128) → GRU(256) → actions (same as other RNN variants)
-# Critic: CNN(image) + MLP(past_actions) + MLP(state) → concat → MLP → value
+# Symmetric critic V(o, a) — not part of the paper
+# Actor:  Conv2d encoder -> Linear(128) -> GRU(256) -> actions
+# Critic: Conv2d encoder -> Linear(128) + past_actions -> MLP -> value
 #
-# The critic receives the privileged state, the actor's image observations,
-# AND past actions — following the "unbiased asymmetric actor-critic" of
-# Geles et al. "Demonstrating Agile Flight from Pixels" (RSS 2024).
-# State component is normalized via RunningStandardScaler in PPO_RNN_VSH.
+# The critic sees only what the actor sees (image + past action), with NO
+# privileged state. Contrast with skrl_ppo_state_critic_cfg.yaml.
 
 models:
   separate: True
@@ -28,11 +26,10 @@ models:
       hidden_size: 256
       num_layers: 1
       sequence_length: 16  # BPTT across 16-step sequences
-  value:  # Unbiased critic: V(s, o, a) — state + image + past_actions
+  value:
     class: DeterministicMixin
     clip_actions: False
     network:
-      # CNN encoder for image (same architecture as actor CNN)
       - name: cnn
         input: STATES["image"]
         layers:
@@ -45,19 +42,12 @@ models:
         input: cnn
         layers: [128]
         activations: elu
-      # MLP for past actions
       - name: past_actions_net
         input: STATES["past_actions"]
         layers: [32]
         activations: elu
-      # MLP for privileged state vector (normalized by state_component_scaler)
-      - name: state_net
-        input: STATES["state"]
-        layers: [128, 64]
-        activations: elu
-      # Combined head: image features + past_actions features + state features
       - name: net
-        input: concatenate([cnn_linear, past_actions_net, state_net])
+        input: concatenate([cnn_linear, past_actions_net])
         layers: [256, 128, 64]
         activations: elu
     output: ONE
@@ -69,9 +59,9 @@ memory:
   memory_size: -1
 
 
-# PPO_RNN_ASYM agent — handles BPTT for GRU actor + asymmetric Dict critic
+# PPO_RNN agent — handles BPTT for the GRU actor, non-RNN critic is fine
 agent:
-  class: PPO_RNN_ASYM
+  class: PPO_RNN
 
   rollouts: 32
   learning_epochs: 8
@@ -88,8 +78,6 @@ agent:
 
   state_preprocessor: null  # Actor images — no standard scaling
   state_preprocessor_kwargs: null
-  critic_state_preprocessor: null  # Dict critic — state component normalized internally
-  critic_state_preprocessor_kwargs: null
   value_preprocessor: RunningStandardScaler
   value_preprocessor_kwargs: null
 
@@ -117,7 +105,7 @@ agent:
 
     wandb: true
     wandb_kwargs:
-      project: "ppo_vision_rnn_geles"
+      project: "ppo_symmetric_critic"
       entity: ""
       name: ""
 

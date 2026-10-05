@@ -11,19 +11,17 @@ here (rather than patching the vendored skrl copy) makes it trivial to:
 
 - diff exactly what is original contribution vs library code
 - upgrade skrl without merge conflicts
-- share the project privately without shipping a forked library
 
 Contents
 --------
 - ``models.gaussian_cnn_rnn``  : CNN+GRU actor with past-action concat
   (R2D2/IMPALA recipe), used for POMDPs with partial visual observability.
-- ``models.vsh_critic``        : V(s, h) critic that concatenates the
-  preprocessed privileged state with the detached actor GRU hidden state.
-- ``agents.ppo_asym``          : PPO with asymmetric actor-critic support
-  (critic operates on a separate privileged state space, optionally
-  Dict-shaped for unbiased critics).
-- ``agents.ppo_rnn_vsh``       : PPO_RNN with asymmetric critic support and
-  optional V(s, h) mode (stores and passes actor GRU hidden state).
+- ``models.memory_state_critic``  : the memory-state critic V(s, z^a) (ours),
+  an MLP over the privileged state and the detached actor GRU hidden state.
+- ``models.history_state_critic`` : the history-state critic V(s, z^c)
+  (baseline), with its own CNN+GRU over the observation-action stream.
+- ``agents.ppo_rnn_asym``      : recurrent PPO with an asymmetric critic; runs
+  all four critics of the paper, selected by the YAML.
 - ``runner``                   : ``CustomRunner`` that registers the
   models and agents above via the standard skrl YAML class names.
 
@@ -32,7 +30,7 @@ Import-time side effect
 Importing this package monkey-patches
 ``skrl.utils.spaces.torch.unflatten_tensorized_space`` so it also accepts an
 already-unflattened ``dict`` input, which is needed by the dict-shaped
-unbiased critic path in ``PPO_ASYM``.  Upstream skrl only handles flat
+observation-state critic path in ``PPO_RNN_ASYM``.  Upstream skrl only handles flat
 tensor inputs, and we would rather patch at import time than fork the
 vendored skrl copy.
 """

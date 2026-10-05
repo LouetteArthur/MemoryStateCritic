@@ -3,19 +3,19 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""End-to-end smoke test: PPO_RNN_VSH + CustomRunner must learn a toy POMDP.
+"""End-to-end smoke test: PPO_RNN_ASYM + CustomRunner must learn a toy POMDP.
 
 This test is a *gate* for the full pipeline. It constructs a minimal
 partially-observed environment that is only solvable by a policy with
-working recurrence, instantiates ``PPO_RNN_VSH`` via ``CustomRunner``, runs
+working recurrence, instantiates ``PPO_RNN_ASYM`` via ``CustomRunner``, runs
 a short training budget on CPU, and asserts that the average episode
 return improves meaningfully from the first few iterations to the last.
 
 If this test fails, something in the stack is broken:
 - the recurrent forward/backward (caught earlier by ``test_gru_actor.py``),
-- the BPTT sequence training in PPO_RNN_VSH,
+- the BPTT sequence training in PPO_RNN_ASYM,
 - the asymmetric critic wiring (critic reads a 2-dim privileged state),
-- the V(s, h) augmentation (actor_hidden injected into the critic),
+- the memory-state critic (the actor's z^a injected into the critic),
 - the ``CustomRunner`` registration of our model/agent classes.
 
 The test is intentionally *slow by unit-test standards* (tens of seconds
@@ -231,7 +231,7 @@ class RememberTargetPOMDP(Wrapper):
 
 
 # ---------------------------------------------------------------------------
-# Runner config — minimal PPO_RNN_VSH setup scaled for a CPU smoke test.
+# Runner config — minimal memory-state critic setup scaled for a CPU smoke test.
 # ---------------------------------------------------------------------------
 
 
@@ -255,7 +255,7 @@ def _make_cfg(timesteps: int) -> dict:
                 },
             },
             "value": {
-                "class": "VshCriticMixin",
+                "class": "MemoryStateCriticMixin",
                 "clip_actions": False,
                 "actor_hidden_size": 32,
                 "layers": [32, 32],
@@ -263,7 +263,7 @@ def _make_cfg(timesteps: int) -> dict:
         },
         "memory": {"class": "RandomMemory", "memory_size": -1},
         "agent": {
-            "class": "PPO_RNN_VSH",
+            "class": "PPO_RNN_ASYM",
             "rollouts": 32,
             "learning_epochs": 2,
             "mini_batches": 2,
@@ -287,8 +287,8 @@ def _make_cfg(timesteps: int) -> dict:
             "kl_threshold": 0.0,
             "rewards_shaper_scale": 1.0,
             "time_limit_bootstrap": False,
-            "vsh_critic": True,
-            "vsh_actor_hidden_size": 32,
+            "memory_state_critic": True,
+            "memory_dim": 32,
             "mixed_precision": False,
             "experiment": {
                 "directory": "",
@@ -314,10 +314,10 @@ def _make_cfg(timesteps: int) -> dict:
 
 @pytest.mark.slow
 @pytest.mark.stochastic
-def test_ppo_rnn_vsh_learns_remember_target():
+def test_memory_state_critic_learns_remember_target():
     """A short training run must noticeably improve episode return.
 
-    Runs PPO_RNN_VSH with BPTT on the ``RememberTargetPOMDP``. The
+    Runs the memory-state critic with BPTT on the ``RememberTargetPOMDP``. The
     task is fully solvable by a recurrent policy: with a random policy the
     expected return is around ``-4`` (mean distance ~0.5 over 8 steps); a
     perfect policy gets close to ``-0.5``. We only assert that the last
@@ -354,7 +354,7 @@ def test_ppo_rnn_vsh_learns_remember_target():
     # std check. Random policy ≈ -4, optimal policy ≈ -1, so the learning
     # headroom is ~3 reward units.
     print(
-        f"\n[ppo_rnn_vsh smoke] episodes={len(returns)} "
+        f"\n[memory-state smoke] episodes={len(returns)} "
         f"early_mean={early.mean():.3f}+-{early.std():.3f} "
         f"late_mean={late.mean():.3f} improvement={improvement:.3f}"
     )
@@ -365,7 +365,7 @@ def test_ppo_rnn_vsh_learns_remember_target():
     # enough to pass reliably on CPU with the tiny training budget while
     # catching pipeline regressions (broken BPTT, dead gradients, etc.).
     assert improvement > 0.8, (
-        "PPO_RNN_VSH did not learn the remember-target POMDP: "
+        "The memory-state critic did not learn the remember-target POMDP: "
         f"early mean return {early.mean():.3f}, late mean return {late.mean():.3f}, "
         f"improvement {improvement:.3f}. "
         "Either the pipeline is broken or the training budget is too small."
@@ -373,12 +373,12 @@ def test_ppo_rnn_vsh_learns_remember_target():
 
 
 # ---------------------------------------------------------------------------
-# V(s, h) history-state critic config
+# V(s, z^c) history-state critic config
 # ---------------------------------------------------------------------------
 
 
-def _make_sh_cfg(timesteps: int) -> dict:
-    """Config for PPO_RNN_SH with HistoryStateCriticMixin."""
+def _make_history_state_cfg(timesteps: int) -> dict:
+    """Config for PPO_RNN_ASYM with HistoryStateCriticMixin."""
     return {
         "seed": 42,
         "models": {
@@ -415,7 +415,7 @@ def _make_sh_cfg(timesteps: int) -> dict:
         },
         "memory": {"class": "RandomMemory", "memory_size": -1},
         "agent": {
-            "class": "PPO_RNN_SH",
+            "class": "PPO_RNN_ASYM",
             "rollouts": 32,
             "learning_epochs": 2,
             "mini_batches": 2,
@@ -439,9 +439,9 @@ def _make_sh_cfg(timesteps: int) -> dict:
             "kl_threshold": 0.0,
             "rewards_shaper_scale": 1.0,
             "time_limit_bootstrap": False,
-            "sh_critic": True,
-            "sh_image_shape": [1, IMG_H, IMG_W],
-            "sh_past_actions_size": N_PAST_ACTIONS,
+            "history_state_critic": True,
+            "history_image_shape": [1, IMG_H, IMG_W],
+            "history_past_actions_size": N_PAST_ACTIONS,
             "mixed_precision": False,
             "experiment": {
                 "directory": "",
@@ -462,10 +462,10 @@ def _make_sh_cfg(timesteps: int) -> dict:
 
 @pytest.mark.slow
 @pytest.mark.stochastic
-def test_ppo_rnn_sh_learns_remember_target():
-    """V(s,h) history-state critic must also learn the remember-target POMDP.
+def test_history_state_critic_learns_remember_target():
+    """The V(s, z^c) history-state critic must also learn the remember-target POMDP.
 
-    Same test as V(s,z) but using HistoryStateCriticMixin with its own
+    Same test as V(s, z^a) but using HistoryStateCriticMixin with its own
     CNN+GRU. The critic has separate visual processing and recurrence from
     the actor, so BPTT flows through both RNNs independently.
     """
@@ -475,7 +475,7 @@ def test_ppo_rnn_sh_learns_remember_target():
 
     env = RememberTargetPOMDP(num_envs=num_envs, device="cpu", seed=0)
 
-    cfg = _make_sh_cfg(timesteps=timesteps)
+    cfg = _make_history_state_cfg(timesteps=timesteps)
     runner = CustomRunner(env, cfg)
     runner.run(mode="train")
 
@@ -490,13 +490,13 @@ def test_ppo_rnn_sh_learns_remember_target():
     improvement = float(late.mean() - early.mean())
 
     print(
-        f"\n[ppo_rnn_sh smoke] episodes={len(returns)} "
+        f"\n[history-state smoke] episodes={len(returns)} "
         f"early_mean={early.mean():.3f}+-{early.std():.3f} "
         f"late_mean={late.mean():.3f} improvement={improvement:.3f}"
     )
 
     assert improvement > 0.8, (
-        "PPO_RNN_SH did not learn the remember-target POMDP: "
+        "The history-state critic did not learn the remember-target POMDP: "
         f"early mean return {early.mean():.3f}, late mean return {late.mean():.3f}, "
         f"improvement {improvement:.3f}. "
         "Either the pipeline is broken or the training budget is too small."

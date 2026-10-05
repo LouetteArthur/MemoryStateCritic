@@ -8,13 +8,12 @@
 Subclasses the upstream ``skrl.utils.runner.torch.Runner`` and extends it with:
 
 * **Custom model factories**: ``gaussian_cnn_rnn_model`` (CNN+GRU actor with past
-  action concat) and ``vsh_critic_model`` / ``sz_critic_model`` (V(s, z)
-  memory-state critic that consumes the detached actor GRU hidden state).
-  These replace the built-in ``gaussiancnnrnnmixin`` / ``vshcriticmixin`` /
-  ``szcriticmixin`` registrations that would otherwise require patching skrl.
-* **Custom agent classes**: ``PPO_ASYM`` and ``PPO_RNN_VSH`` (alias
-  ``PPO_RNN_SZ``), which implement asymmetric actor-critic and V(s, z)
-  training respectively (see ``skrl_ext.agents``).
+  action concat), ``memory_state_critic_model`` (the V(s, z^a) critic, which
+  consumes the detached actor GRU hidden state) and ``history_state_critic_model``
+  (the V(s, z^c) baseline). YAMLs select them by ``class:`` name, so skrl itself
+  needs no patching.
+* **Custom agent class**: ``PPO_RNN_ASYM``, recurrent PPO with an asymmetric
+  critic (see ``skrl_ext.agents``).
 * **Asymmetric actor-critic plumbing**: when a ``value`` role is declared and
   the environment exposes a separate ``state_space``, the value network is
   built on that privileged state space rather than the actor's observation
@@ -42,9 +41,13 @@ from skrl.resources.preprocessors.torch import (  # noqa: F401  (used by eval)
 from skrl.resources.schedulers.torch import KLAdaptiveLR  # noqa: F401  (used by eval)
 from skrl.utils.runner.torch import Runner
 
+# YAML ``agent.class`` names that resolve to PPO_RNN_ASYM. All but the first are
+# names from before the code adopted the paper's notation.
+_RECURRENT_ASYM_AGENTS = ("ppo_rnn_asym", "ppo_rnn_vsh", "ppo_rnn_sz", "ppo_rnn_sh")
+
 
 class CustomRunner(Runner):
-    """Project-local skrl Runner with asymmetric AC and V(s, h) support."""
+    """Project-local skrl Runner with asymmetric actor-critic support."""
 
     def _component(self, name: str) -> type:
         """Resolve component name → class/factory.
@@ -58,44 +61,23 @@ class CustomRunner(Runner):
             from isaac_pursuit_evasion.skrl_ext.models import gaussian_cnn_rnn_model
 
             return gaussian_cnn_rnn_model
-        if lname == "gaussiancnngruflatmixin":
-            from isaac_pursuit_evasion.skrl_ext.models import (
-                gaussian_cnn_rnn_flat_model,
-            )
+        # "vshcriticmixin" / "szcriticmixin": names from before the paper's notation
+        if lname in ("memorystatecriticmixin", "vshcriticmixin", "szcriticmixin"):
+            from isaac_pursuit_evasion.skrl_ext.models import memory_state_critic_model
 
-            return gaussian_cnn_rnn_flat_model
-        if lname in ("vshcriticmixin", "szcriticmixin"):
-            from isaac_pursuit_evasion.skrl_ext.models import vsh_critic_model
-
-            return vsh_critic_model
+            return memory_state_critic_model
         if lname == "historystatecriticmixin":
             from isaac_pursuit_evasion.skrl_ext.models import history_state_critic_model
 
             return history_state_critic_model
         # project-local agents
-        if lname in ["ppo_asym", "ppo_asym_default_config"]:
+        if lname.removesuffix("_default_config") in _RECURRENT_ASYM_AGENTS:
             from isaac_pursuit_evasion.skrl_ext.agents import (
-                PPO_ASYM,
-                PPO_ASYM_DEFAULT_CONFIG,
+                PPO_RNN_ASYM,
+                PPO_RNN_ASYM_DEFAULT_CONFIG,
             )
 
-            return PPO_ASYM_DEFAULT_CONFIG if "default_config" in lname else PPO_ASYM
-        if lname in [
-            "ppo_rnn_vsh",
-            "ppo_rnn_vsh_default_config",
-            "ppo_rnn_sz",
-            "ppo_rnn_sz_default_config",
-            "ppo_rnn_sh",
-            "ppo_rnn_sh_default_config",
-            "ppo_rnn_asym",
-            "ppo_rnn_asym_default_config",
-        ]:
-            from isaac_pursuit_evasion.skrl_ext.agents import (
-                PPO_RNN_VSH,
-                PPO_RNN_VSH_DEFAULT_CONFIG,
-            )
-
-            return PPO_RNN_VSH_DEFAULT_CONFIG if "default_config" in lname else PPO_RNN_VSH
+            return PPO_RNN_ASYM_DEFAULT_CONFIG if "default_config" in lname else PPO_RNN_ASYM
         # fall back to upstream resolver
         return super()._component(name)
 
@@ -162,7 +144,7 @@ class CustomRunner(Runner):
         agent_class = cfg.get("agent", {}).get("class", "").lower()
         # Agent classes that use asymmetric actor-critic (value network sees
         # privileged state_space instead of actor observation_space).
-        _asym_agents = {"ppo_asym", "ppo_rnn_vsh", "ppo_rnn_sz", "ppo_rnn_sh", "ppo_rnn_asym"}
+        _asym_agents = set(_RECURRENT_ASYM_AGENTS)
 
         models = {}
         for agent_id in possible_agents:
@@ -269,7 +251,7 @@ class CustomRunner(Runner):
         """Instantiate the agent, wiring up the asymmetric critic preprocessor.
 
         This mirrors the upstream method but also accepts our project-local
-        agent classes (``ppo_asym``, ``ppo_rnn_vsh``) and configures
+        agent class (``ppo_rnn_asym``) and configures
         ``critic_state_preprocessor_kwargs`` from the environment's
         ``state_space`` when asymmetric training is active. When the env does
         not expose a state space (e.g. symmetric vision training), the
@@ -288,12 +270,12 @@ class CustomRunner(Runner):
             raise ValueError("No 'class' field defined in 'agent' cfg")
 
         # delegate standard / multi-agent classes (ppo, amp, ippo, mappo, ...)
-        # to the upstream implementation — only PPO_ASYM and PPO_RNN_VSH need
-        # the asymmetric state_space wiring below.
-        if agent_class not in ["ppo_asym", "ppo_rnn_vsh", "ppo_rnn_sz", "ppo_rnn_sh", "ppo_rnn_asym"]:
+        # to the upstream implementation — only PPO_RNN_ASYM needs the
+        # asymmetric state_space wiring below.
+        if agent_class not in _RECURRENT_ASYM_AGENTS:
             return super()._generate_agent(env, cfg, models)
 
-        # project-local: PPO_ASYM / PPO_RNN_VSH — create memories + wire
+        # project-local: PPO_RNN_ASYM — create memories + wire
         # critic_state_preprocessor from the privileged state_space
         if "memory" not in cfg:
             logger.warning(
@@ -317,9 +299,9 @@ class CustomRunner(Runner):
         agent_cfg.update(self._process_cfg(cfg["agent"]))
         agent_cfg.get("state_preprocessor_kwargs", {}).update({"size": observation_spaces[agent_id], "device": device})
         # asymmetric actor-critic: always size critic_state_preprocessor_kwargs from state_space.
-        # PPO_RNN_VSH.init reads `critic_state_preprocessor_kwargs.size` to allocate the
+        # PPO_RNN_ASYM.init reads `critic_state_preprocessor_kwargs.size` to allocate the
         # memory.critic_states slot, even when `critic_state_preprocessor` is null
-        # (e.g. Geles V(s,o,a) does its own state-component scaling internally). Without this,
+        # (e.g. the V(s,o,a) critic does its own state-component scaling internally). Without this,
         # the slot defaults to self.observation_space (actor obs 8196) and add_samples crashes
         # on critic states of size 8260.
         state_space = state_spaces[agent_id]

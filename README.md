@@ -7,6 +7,14 @@
 Reference implementation for *"Memory-State Critic for Asymmetric Actor-Critic with
 Application to Vision-Based Pursuit-Evasion"*, EWRL 2026.
 
+Arthur Louette, Alejandro Sánchez Roncero, Gaspard Lambrechts, Pascal Leroy,
+Julien Hansen, Petter Ögren, Damien Ernst
+
+**[Paper](https://openreview.net/forum?id=iKiJUMvYT7)** ·
+**[PDF](https://openreview.net/pdf?id=iKiJUMvYT7)** ·
+**[BibTeX](#citation)**
+
+[![paper](https://img.shields.io/badge/paper-OpenReview-8c1b13.svg)](https://openreview.net/forum?id=iKiJUMvYT7)
 [![tests](https://github.com/LouetteArthur/MemoryStateCritic/actions/workflows/tests.yml/badge.svg)](https://github.com/LouetteArthur/MemoryStateCritic/actions/workflows/tests.yml)
 [![license](https://img.shields.io/badge/license-BSD--3--Clause-blue.svg)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.11-blue.svg)](install.sh)
@@ -25,6 +33,16 @@ We show that conditioning on the state and the **policy's own memory** `z^a`, th
 state the actor already computes to choose its action, is enough: `V(s, z^a)` is
 well-defined and unbiased. One recurrent encoder instead of two, and the value loss never
 has to be backpropagated into it.
+
+In code, the whole method is one line in the critic:
+
+```python
+z_a, _ = actor.f_theta(torch.cat([obs, prev_action], dim=-1))  # the policy's memory
+value = v_psi(torch.cat([state, z_a.detach()], dim=-1))        # stop-gradient: f_theta stays out of the value loss
+```
+
+[`minimal/memory_state_critic.py`](minimal/memory_state_critic.py) is a self-contained
+PyTorch version, with the history-state baseline next to it, that runs without the simulator.
 
 ## Results
 
@@ -64,7 +82,7 @@ Train the memory-state critic for one seed in the open arena:
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES python scripts/skrl/train.py \
     --task Ablation-vision-vs-trajectories \
-    --agent skrl_ppo_vision_rnn_sz_cfg_entry_point \
+    --agent skrl_ppo_memory_state_critic_cfg_entry_point \
     --sensor-mode both --num-past-actions 1 --seed 42 \
     --num_envs 512 --total_frames 51200000 --headless --enable_cameras
 # wall arena: add --enable-obstacles --discount-factor=0.999
@@ -80,22 +98,24 @@ python scripts/plot_ablation_results.py --paper \
 
 ## The critics
 
-> [!IMPORTANT]
-> **The code labels predate the paper's notation and do not read the way you would guess.**
-> `Vsz` is the contribution; `Vsh` is the baseline. Swapping them silently runs the wrong
-> experiment.
-
-| Paper | Symbol | Code | `--agent ...` | Critic input |
-|---|---|---|---|---|
-| State-only | `V(s)` | `Vs` | `skrl_ppo_vision_rnn_cfg_entry_point` | privileged state |
-| History-state | `V(s, z^c)` | `Vsh` | `skrl_ppo_vision_rnn_sh_cfg_entry_point` | state + a **second** CNN+GRU on the critic side |
-| **Memory-state (ours)** | **`V(s, z^a)`** | `Vsz` | `skrl_ppo_vision_rnn_sz_cfg_entry_point` | state + the **actor's** GRU hidden state, stop-gradient |
-| Observation-state | `V(s, o, a)` | `Vsoa` | `skrl_ppo_vision_rnn_geles_cfg_entry_point` | state + image + past actions (add `--unbiased-critic`) |
+| Paper | Symbol | `--agent skrl_ppo_<…>_cfg_entry_point` | Critic input |
+|---|---|---|---|
+| State-only | `V(s)` | `state_critic` | privileged state |
+| History-state | `V(s, z^c)` | `history_state_critic` | state + a **second** CNN+GRU on the critic side |
+| **Memory-state (ours)** | **`V(s, z^a)`** | `memory_state_critic` | state + the **actor's** GRU hidden state, stop-gradient |
+| Observation-state | `V(s, o, a)` | `observation_state_critic` | state + image + past action (add `--unbiased-critic`) |
 
 All four share the same CNN+GRU actor reading a 64×64 depth channel, a 64×64 opponent
-segmentation mask and one past action. Only the critic head changes.
-`skrl_ppo_vision_rnn_symmetric_cfg_entry_point` (`Vo`, actor observations only) is
-implemented but not part of the paper.
+segmentation mask and one past action. Only the critic changes: the memory-state critic is
+[`memory_state_critic.py`](source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/models/memory_state_critic.py),
+the baseline is
+[`history_state_critic.py`](source/isaac_pursuit_evasion/isaac_pursuit_evasion/skrl_ext/models/history_state_critic.py),
+and one agent, `PPO_RNN_ASYM`, trains all of them. `symmetric_critic` (`V(o, a)`, actor
+observations only) is implemented but not part of the paper.
+
+The runs behind the paper were logged under older labels (`Vs`, `Vsh`, `Vsz`, `Vsoa`); the
+old names are still accepted everywhere, and [REPRODUCING.md](REPRODUCING.md#1-the-critics-in-the-code)
+maps them.
 
 ## Reproducing the paper
 
@@ -111,9 +131,8 @@ interrupted sweep resumes where it stopped; split the grid across machines with
 `--critics` / `--arena`.
 
 [**REPRODUCING.md**](REPRODUCING.md) is the authoritative document: exact seeds, settings,
-hyperparameters, the naming map above, offline figure regeneration, a Docker recipe that
-pins the whole stack, and a **Known limitations** section stating what we would fix given
-more time.
+hyperparameters, the mapping to the older critic names, offline figure regeneration,
+and a Docker recipe that pins the whole stack.
 
 ## Repository layout
 
@@ -121,28 +140,30 @@ more time.
 source/isaac_pursuit_evasion/
   isaac_pursuit_evasion/
     tasks/direct/pursuit_evasion/   PursuitEvasionEnv, its config, the critic YAMLs
-    skrl_ext/                       asymmetric recurrent PPO on top of skrl
+    skrl_ext/                       the critics and asymmetric recurrent PPO, on top of skrl
   assets/ dynamics/ controllers/    Crazyflie assets, propeller dynamics, heuristic evaders
 source/third_parties/skrl/          vendored skrl 1.4.3 fork (see FORK_NOTES.md)
+minimal/                            the method in plain PyTorch, no simulator
 scripts/
   skrl/train.py  skrl/play.py       train / visualise a checkpoint
   reproduce_paper.sh                the paper's exact grid
   run_ablation.sh                   one cell of it
   plot_ablation_results.py          regenerate the figures
 figures/paper/                      the plotted series for all 160 runs + the paper figures
-tests/                              77 tests, no simulator needed
+tests/                              50 tests, no simulator needed
 ```
 
 The environment, the critic variants and the plotting scripts are a curated slice of a
 larger codebase. The self-play league, the multi-agent environments, the Elo tournament and
-the Crazyswarm flight scripts are not shipped here. `deployment/` and some staged-training
-plumbing remain because the paper's import path reaches them; no experiment uses them.
+the Crazyswarm flight scripts are not shipped here. `deployment/` and the environment's
+opponent plumbing remain because the environment's import path reaches them; no experiment
+uses them.
 
 ## Development
 
 ```bash
-pytest tests/                       # all 77, ~4 min, no Isaac Sim (conftest.py stubs it)
-pytest tests/ -m "not stochastic"   # the 75 deterministic ones, ~7 s — what CI runs
+pytest tests/                       # all 50, several minutes, no Isaac Sim (conftest.py stubs it)
+pytest tests/ -m "not stochastic"   # the 48 deterministic ones, ~2 s — what CI runs
 pre-commit run --all-files          # black, isort, flake8, pyupgrade, codespell
 ```
 
@@ -153,15 +174,18 @@ excluded from CI rather than left to fail there intermittently.
 
 ## Citation
 
+If you use this code or build on the memory-state critic, please cite:
+
 ```bibtex
-@inproceedings{memorystatecritic2026,
+@inproceedings{louette2026memorystate,
   title     = {Memory-State Critic for Asymmetric Actor-Critic with
                Application to Vision-Based Pursuit-Evasion},
   author    = {Louette, Arthur and S{\'a}nchez Roncero, Alejandro and
                Lambrechts, Gaspard and Leroy, Pascal and Hansen, Julien and
                {\"O}gren, Petter and Ernst, Damien},
   booktitle = {European Workshop on Reinforcement Learning (EWRL)},
-  year      = {2026}
+  year      = {2026},
+  url       = {https://openreview.net/forum?id=iKiJUMvYT7}
 }
 ```
 
